@@ -1,0 +1,57 @@
+{
+  "id": "/",
+  "name": "Kyambogo Digital Campus Map",
+  "short_name": "KyambogoMap",
+  "description": "Digital campus map and navigation system for Kyambogo University to locate faculties, departments, staff offices, and department heads with interactive routing.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#ffffff",
+  "theme_color": "#0bce3b",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["education", "navigation", "travel", "productivity"],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Search Faculties",
+      "short_name": "Faculties",
+      "description": "Locate academic faculties and departments",
+      "url": "/?category=faculties",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "My Campus Location",
+      "short_name": "Locate",
+      "description": "Find your real-time campus position",
+      "url": "/?action=locate",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "packageId": "org.kyambogo.campusmap",
+  "host": "ais-pre-sxqfrx55rwriyirynff3mq-517746140877.europe-west1.run.app",
+  "name": "Kyambogo Digital Campus Map",
+  "launcherName": "KyambogoMap",
+  "display": "standalone",
+  "orientation": "landscape",
+  "themeColor": "#0BCE3B",
+  "navigationColor": "#000000",
+  "backgroundColor": "#FFFFFF",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://ais-pre-sxqfrx55rwriyirynff3mq-517746140877.europe-west1.run.app/pwa-512x512.png",
+  "maskableIconUrl": "https://ais-pre-sxqfrx55rwriyirynff3mq-517746140877.europe-west1.run.app/pwa-maskable-512x512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "android"
+  },
+  "appVersionName": "1.0.1",
+  "appVersionCode": 2,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://ais-pre-sxqfrx55rwriyirynff3mq-517746140877.europe-west1.run.app/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {
+    "locationDelegation": {
+      "enabled": true
+    },
+    "playBilling": {
+      "enabled": false
+    }
+  },
+  "alphaDependencies": {
+    "enabled": false
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Kyambogo Digital Campus Map",
+  "description": "Digital campus map and navigation system for Kyambogo University to locate faculties, departments, staff offices, and department heads with interactive routing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kyambogo Digital Campus Map</title>
+    <meta name="description" content="Digital campus map and navigation system for Kyambogo University to locate faculties, departments, staff offices, and department heads with interactive routing.">
+    <meta property="og:title" content="Kyambogo Digital Campus Map">
+    <meta property="og:description" content="Digital campus map and navigation system for Kyambogo University to locate faculties, departments, staff offices, and department heads with interactive routing.">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="/style.css">
+    
+    <!-- PWA & Mobile App Support -->
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#0bce3b">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="KyambogoMap">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/svg+xml" href="/icon.svg">
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png">
+</head>
+<body>
+
+<!-- Leaflet Map Canvas (Full viewport background) -->
+<div id="map"></div>
+
+<!-- Google Maps Style Top Bar: Search Box and Category Filter Chips on the SAME line -->
+<header class="gmaps-top-header">
+    <!-- Left Menu Button for Top Bar -->
+    <button id="topMenuBtn" class="top-menu-btn" title="Open Campus Menu" aria-label="Open Menu">
+        <span>☰</span>
+    </button>
+
+    <!-- Top Bar Quick AI Campus Guide Button -->
+    <button id="topAiGuideBtn" class="top-ai-header-btn" onclick="window.openCampusAiModal && window.openCampusAiModal()" title="Ask Kyambogo AI Campus Guide" aria-label="Ask Kyambogo AI">
+        <span class="ai-sparkle-icon">✨</span>
+        <span class="ai-btn-text">AI Guide</span>
+    </button>
+
+    <div class="search-container">
+        <input id="searchBox" type="text" placeholder="Search Kyambogo campus, departments, offices..." autocomplete="off">
+        <button id="appQrBtn" class="search-qr-btn" title="Scan to Get App on Phone" aria-label="Get App QR Code">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                <path d="M4 4h6v6H4V4zm2 2v2h2V6H6zm8-2h6v6h-6V4zm2 2v2h2V6h-2zM4 14h6v6H4v-6zm2 2v2h2v-2H6zm10 0h2v2h-2v-2zm-2-2h2v2h-2v-2zm4 4h2v2h-2v-2zm-2 2h2v2h-2v-2zm4-2h2v2h-2v-2zm0-4h2v2h-2v-2zm-6 2h2v2h-2v-2zM2 2v8h8V2H2zm12 0v8h8V2h-8zM2 12v10h10V12H2zm12 10h4v-2h-4v2z"/>
+            </svg>
+        </button>
+        <button id="searchButton" aria-label="Search">🔍</button>
+        <div id="searchResults"></div>
+    </div>
+
+    <!-- Google Maps Style Horizontal Category Filter Chips Bar -->
+    <div class="gmaps-filter-bar-container" id="gmapsFilterBar" role="tablist" aria-label="Campus Categories">
+        <button class="gmaps-filter-chip active" data-category="all" role="tab" aria-selected="true">
+            <span class="chip-icon">✨</span>
+            <span class="chip-label">All Places</span>
+        </button>
+        <button class="gmaps-filter-chip events-chip" data-category="events" role="tab" aria-selected="false" data-events-tooltip="🎉 Activities, ceremonies, sports & occasions taking place in Kyambogo campus" title="Activities, ceremonies, sports & occasions taking place in Kyambogo campus">
+            <span class="chip-icon">🎉</span>
+            <span class="chip-label">Events <span class="events-badge-pill" id="eventsCountBadge">9</span></span>
+        </button>
+        <button class="gmaps-filter-chip" data-category="cafeterias" role="tab" aria-selected="false">
+            <span class="chip-icon">🍽️</span>
+            <span class="chip-label">Cafeterias</span>
+        </button>
+        <button class="gmaps-filter-chip" data-category="banks" role="tab" aria-selected="false">
+            <span class="chip-icon">🏦</span>
+            <span class="chip-label">Banks</span>
+        </button>
+        <button class="gmaps-filter-chip" data-category="faculties" role="tab" aria-selected="false">
+            <span class="chip-icon">🏛️</span>
+            <span class="chip-label">Faculties</span>
+        </button>
+        <button class="gmaps-filter-chip" data-category="departments" role="tab" aria-selected="false">
+            <span class="chip-icon">🏢</span>
+            <span class="chip-label">Departments</span>
+        </button>
+        <button class="gmaps-filter-chip" data-category="schools" role="tab" aria-selected="false">
+            <span class="chip-icon">🏫</span>
+            <span class="chip-label">Schools</span>
+        </button>
+        <button class="gmaps-filter-chip" data-category="halls" role="tab" aria-selected="false">
+            <span class="chip-icon">🛏️</span>
+            <span class="chip-label">Halls</span>
+        </button>
+        <button class="gmaps-filter-chip" data-category="religious" role="tab" aria-selected="false">
+            <span class="chip-icon">⛪</span>
+            <span class="chip-label">Religious Places</span>
+        </button>
+        <button class="gmaps-filter-chip" data-category="libraries" role="tab" aria-selected="false">
+            <span class="chip-icon">📚</span>
+            <span class="chip-label">Libraries</span>
+        </button>
+        <button class="gmaps-filter-chip" data-category="laboratories" role="tab" aria-selected="false">
+            <span class="chip-icon">🔬</span>
+            <span class="chip-label">Laboratories</span>
+        </button>
+        <button class="gmaps-filter-chip" data-category="sports" role="tab" aria-selected="false">
+            <span class="chip-icon">🏟️</span>
+            <span class="chip-label">Sports</span>
+        </button>
+    </div>
+
+    <!-- Location Control Buttons -->
+    <div class="location-control">
+        <button id="topMapLayersBtn" class="top-map-layers-btn" title="Toggle Map / Satellite Layer">🗺️ Map / Satellite</button>
+        <button id="locationButton">📍 My Location</button>
+        <button id="stopLocationButton" style="display: none;">⏹ Stop</button>
+        <button id="shareLocation">🔗 Share</button>
+    </div>
+</header>
+
+<div id="locationStatus"></div>
+
+<!-- Active Shortest Route Walking Navigation Banner -->
+<div id="activeNavigationBanner" class="active-navigation-banner" style="display: none;" role="region" aria-label="Walking Navigation Banner">
+    <div class="nav-banner-left">
+        <div class="nav-badge-pill">
+            <span class="nav-pulse-dot"></span>
+            <span>SHORTEST WALKING ROUTE</span>
+        </div>
+        <div class="nav-main-info">
+            <strong id="navDestTitle">Destination</strong>
+            <span class="nav-meta-dist" id="navMetaDist">-- m • ~-- min</span>
+        </div>
+        <div class="nav-step-instruction" id="navStepInstruction">
+            Calculating optimal campus footpath...
+        </div>
+    </div>
+    <div class="nav-banner-actions">
+        <button type="button" id="cancelNavBannerBtn" class="nav-cancel-btn" title="End Walking Navigation" aria-label="End Navigation">
+            ✕ End
+        </button>
+    </div>
+</div>
+
+<!-- Offline status indicator -->
+<div id="offlineToast" class="offline-toast" style="display: none;">
+    <span class="offline-dot"></span>
+    <span>Offline Mode — Kyambogo Campus Map Cached</span>
+</div>
+
+<!-- Install App & Google Play Store Modal -->
+<div id="pwaModal" class="pwa-modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="pwaModalTitle">
+    <div class="pwa-modal-card">
+        <button class="pwa-modal-close" id="pwaModalClose" aria-label="Close modal">✕</button>
+        
+        <div class="pwa-modal-header">
+            <img src="/icon.svg" alt="Kyambogo Map Icon" class="pwa-modal-icon" />
+            <div>
+                <h3 id="pwaModalTitle">Kyambogo Campus Map</h3>
+                <p class="pwa-modal-subtitle">Official Android & iOS App • Google Play Store Ready</p>
+            </div>
+        </div>
+
+        <div class="pwa-modal-tabs">
+            <button class="pwa-tab-btn active" data-tab="install" id="tabBtnInstall">📱 Install App</button>
+            <button class="pwa-tab-btn" data-tab="playstore" id="tabBtnPlaystore">🛍️ Google Play Store (.aab)</button>
+        </div>
+
+        <!-- Tab 1: Direct Install on Android & iOS -->
+        <div class="pwa-tab-content active" id="tabInstall">
+            <!-- Android / Desktop Instant Install -->
+            <div class="pwa-platform-card android-card" id="androidInstallSection">
+                <div class="platform-header">
+                    <span class="platform-icon">🤖</span>
+                    <div>
+                        <strong>Android App (Instant Install)</strong>
+                        <p>Runs as a full-screen application with offline map routing</p>
+                    </div>
+                </div>
+                <button id="pwaDirectInstallBtn" class="pwa-action-primary-btn">
+                    📲 Add to Android Home Screen
+                </button>
+                <p class="platform-hint" id="androidInstallHint">Tap to install directly onto your device without browser navigation bars.</p>
+            </div>
+
+            <!-- iOS Safari Install -->
+            <div class="pwa-platform-card ios-card">
+                <div class="platform-header">
+                    <span class="platform-icon">🍏</span>
+                    <div>
+                        <strong>iPhone & iPad (iOS App)</strong>
+                        <p>Install directly from Safari without App Store fees</p>
+                    </div>
+                </div>
+                <div class="ios-steps">
+                    <div class="ios-step-item">
+                        <span class="step-num">1</span>
+                        <span>In Safari, tap the <strong>Share</strong> button <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" style="display:inline;vertical-align:middle;"><path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z"/></svg></span>
+                    </div>
+                    <div class="ios-step-item">
+                        <span class="step-num">2</span>
+                        <span>Scroll down and tap <strong>"Add to Home Screen"</strong> ➕</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Google Play Store Upload Guide -->
+        <div class="pwa-tab-content" id="tabPlaystore">
+            <div class="playstore-box">
+                <h4>📦 Google Play Store Package Ready</h4>
+                <p class="playstore-desc">This project includes all required files for publishing on the Google Play Store (TWA Manifest, Digital Asset Links, 512x512 icons, and Service Worker).</p>
+                
+                <div class="playstore-steps-list">
+                    <div class="live-url-card" style="margin-bottom: 14px; padding: 10px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                        <div style="overflow: hidden;">
+                            <span style="display: block; font-size: 11px; font-weight: 700; color: #166534; text-transform: uppercase; letter-spacing: 0.5px;">Live PWA & Store URL</span>
+                            <code id="livePwaUrlText" style="font-size: 11.5px; color: #0f172a; word-break: break-all;">https://ais-pre-sxqfrx55rwriyirynff3mq-517746140877.europe-west1.run.app</code>
+                        </div>
+                        <button id="copyLivePwaUrlBtn" class="pwa-btn-outline" style="flex-shrink: 0; padding: 6px 10px; font-size: 11.5px;">📋 Copy URL</button>
+                    </div>
+
+                    <div class="p-step">
+                        <strong>Method 1 (Fastest — 1-Click with PWABuilder):</strong>
+                        <ol>
+                            <li>Open <a href="https://www.pwabuilder.com/" target="_blank" rel="noopener" class="p-link">PWABuilder.com ↗</a></li>
+                            <li>Enter your live app URL and click <strong>Package for Stores</strong></li>
+                            <li>Click <strong>Android</strong> -> <strong>Generate Package</strong> to download your signed <code>.aab</code> (Android App Bundle).</li>
+                        </ol>
+                    </div>
+                    <div class="p-step">
+                        <strong>Method 2 (Google Official Bubblewrap CLI):</strong>
+                        <code>npx @bubblewrap/cli build</code>
+                        <p>Reads <code>twa-manifest.json</code> and compiles <code>app-release-bundle.aab</code>.</p>
+                    </div>
+                    <div class="p-step">
+                        <strong>Upload to Google Play Console:</strong>
+                        <ol>
+                            <li>Open <a href="https://play.google.com/console" target="_blank" rel="noopener" class="p-link">Google Play Console ↗</a></li>
+                            <li>Create app: "Kyambogo Digital Campus Map"</li>
+                            <li>Upload the generated <code>.aab</code> under <em>Production Releases</em></li>
+                        </ol>
+                    </div>
+                </div>
+
+                <div class="pwa-modal-footer-actions">
+                    <a href="/manifest.webmanifest" target="_blank" class="pwa-btn-outline">📄 Web Manifest</a>
+                    <a href="/.well-known/assetlinks.json" target="_blank" class="pwa-btn-outline">🔗 AssetLinks.json</a>
+                    <button id="pwaCopyGuideBtn" class="pwa-btn-outline">📋 Copy Upload Guide</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- About the Creator Modal -->
+<div id="creatorModal" class="creator-modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="creatorModalTitle">
+    <div class="creator-modal-card">
+        <button class="creator-modal-close" id="creatorModalClose" aria-label="Close creator dialog">✕</button>
+        
+        <div class="creator-modal-hero">
+            <div class="creator-avatar-wrap">
+                <div class="creator-avatar">
+                    <span class="avatar-initials">DM</span>
+                </div>
+                <span class="creator-status-badge">🟢 Lead Developer</span>
+            </div>
+            <div class="creator-hero-info">
+                <h2 id="creatorModalTitle">Derick Mabirizi</h2>
+                <p class="creator-role-title">Creator & Lead Software Engineer</p>
+                <p class="creator-institution">🎓 Kyambogo University Campus Navigation Project</p>
+            </div>
+        </div>
+
+        <div class="creator-modal-body">
+            <!-- Contact & Quick Info Pill Strip -->
+            <div class="creator-quick-bar">
+                <a href="https://mail.google.com/mail/?view=cm&fs=1&to=mabiriziderick26@gmail.com&su=Kyambogo%20Campus%20Map%20Feedback%20for%20Derick" target="_blank" rel="noopener noreferrer" class="creator-quick-chip email-chip" title="Compose email in Gmail">
+                    <span>✉️</span>
+                    <span>mabiriziderick26@gmail.com</span>
+                </a>
+                <button class="creator-quick-chip copy-chip" id="copyCreatorEmailBtn" title="Copy email address">
+                    <span>📋</span>
+                    <span id="copyEmailText">Copy Email</span>
+                </button>
+                <span class="creator-quick-chip loc-chip">
+                    <span>📍</span>
+                    <span>Kyambogo, Kampala</span>
+                </span>
+            </div>
+
+            <!-- About / Bio Section -->
+            <div class="creator-section">
+                <h3>💡 About the Creator & Project Vision</h3>
+                <p>
+                    The <strong>Kyambogo Digital Campus Map</strong> was envisioned, designed, and developed by <strong>Derick Mabirizi</strong> to solve one of the most persistent everyday challenges for students, lecturers, new freshmen, and visitors: finding lecture halls, administrative wings, departments, and specific staff offices across the sprawling hills of Kyambogo University.
+                </p>
+                <p>
+                    Derick created this system with modern geospatial navigation algorithms, real-time GPS location tracking, verified campus building boundaries, and offline mobile capability — ensuring students never miss a lecture or struggle to locate an office again.
+                </p>
+            </div>
+
+            <!-- Highlights / Capabilities -->
+            <div class="creator-section">
+                <h3>🚀 Engineering Highlights & Innovation</h3>
+                <div class="creator-features-grid">
+                    <div class="creator-feature-item">
+                        <span class="feat-icon">🧭</span>
+                        <div>
+                            <strong>Interactive Walking Navigation</strong>
+                            <p>Turn-by-turn routing between 60+ verified university landmarks and faculties.</p>
+                        </div>
+                    </div>
+                    <div class="creator-feature-item">
+                        <span class="feat-icon">📱</span>
+                        <div>
+                            <strong>PWA & Mobile App Support</strong>
+                            <p>Full-screen installable app for Android & iOS with complete offline map caching.</p>
+                        </div>
+                    </div>
+                    <div class="creator-feature-item">
+                        <span class="feat-icon">🏢</span>
+                        <div>
+                            <strong>Departments & HOD Directory</strong>
+                            <p>Direct locator for faculties, programmes, staff offices, and department heads.</p>
+                        </div>
+                    </div>
+                    <div class="creator-feature-item">
+                        <span class="feat-icon">🛍️</span>
+                        <div>
+                            <strong>Google Play Store Architecture</strong>
+                            <p>Trusted Web Activity (TWA) compliance for seamless Play Store deployment.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Connect / Contact Action Row -->
+            <div class="creator-actions-footer">
+                <a href="https://mail.google.com/mail/?view=cm&fs=1&to=mabiriziderick26@gmail.com&su=Kyambogo%20Campus%20Map%20Feedback%20for%20Derick" target="_blank" rel="noopener noreferrer" class="creator-action-btn primary-btn">
+                    ✉️ Open in Gmail / Send Message
+                </a>
+                <button class="creator-action-btn secondary-btn" id="creatorShareBtn">
+                    🔗 Share Campus Map
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Campus Notice Board Modal (Scrollable University Bulletin & Events Board) -->
+<div id="campusNoticeBoardModal" class="event-modal-overlay notice-board-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="noticeBoardModalTitle">
+    <div class="event-modal-card notice-board-card">
+        <button class="event-modal-close" id="noticeBoardModalClose" aria-label="Close notice board">✕</button>
+        
+        <div class="notice-board-header">
+            <div class="notice-board-title-group">
+                <span class="notice-board-pinned-badge">📌 Kyambogo University Bulletin</span>
+                <h2 id="noticeBoardModalTitle">Campus Notice Board & Events</h2>
+                <p>Live announcements, academic symposia, guild activities, sports fixtures & ceremonies.</p>
+            </div>
+            <div class="notice-board-actions">
+                <button type="button" class="post-notice-btn" onclick="window.openAddEventModal()">
+                    ➕ Post Notice
+                </button>
+            </div>
+        </div>
+
+        <!-- Filter bar & search inside the notice board -->
+        <div class="notice-board-controls">
+            <div class="notice-search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="noticeBoardSearchInput" placeholder="Search notices by keyword, faculty, speaker, or room..." />
+            </div>
+            <div class="notice-board-category-tabs" id="noticeBoardCategoryTabs">
+                <button class="notice-tab active" data-category="all">🌟 All Notices</button>
+                <button class="notice-tab" data-category="academic">📚 Academic</button>
+                <button class="notice-tab" data-category="tech">💻 Tech & Labs</button>
+                <button class="notice-tab" data-category="sports">⚽ Sports</button>
+                <button class="notice-tab" data-category="guild">🏛️ Guild Life</button>
+                <button class="notice-tab" data-category="cultural">🎨 Arts & Drama</button>
+                <button class="notice-tab" data-category="ceremony">🎓 Ceremonies</button>
+            </div>
+        </div>
+
+        <!-- Scrollable Notice Board Feed -->
+        <div class="notice-board-scroll-area" id="noticeBoardScrollArea">
+            <!-- Dynamic notice bulletin cards populated via JavaScript -->
+        </div>
+
+        <!-- Footer -->
+        <div class="notice-board-footer">
+            <span class="notice-board-count" id="noticeBoardCountText">Showing active notices</span>
+            <button type="button" class="notice-board-map-mode-btn" id="noticeBoardMapModeBtn">
+                🗺️ Switch to Map Pins View
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Campus Event Details Modal -->
+<div id="eventModal" class="event-modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="eventModalTitle">
+    <div class="event-modal-card">
+        <button class="event-modal-close" id="eventModalClose" aria-label="Close event dialog">✕</button>
+        
+        <div class="event-modal-header">
+            <span class="event-modal-category-badge" id="eventModalCategory">🎓 Event</span>
+            <h2 id="eventModalTitle">Event Title</h2>
+            <div class="event-modal-meta">
+                <span class="event-meta-item" id="eventModalDate">📅 Date</span>
+                <span class="event-meta-item" id="eventModalTime">🕒 Time</span>
+            </div>
+        </div>
+
+        <div class="event-modal-body">
+            <!-- Venue Location Banner -->
+            <div class="event-venue-card">
+                <span class="venue-icon">📍</span>
+                <div class="venue-info">
+                    <strong id="eventModalBuildingName">Location Name</strong>
+                    <p id="eventModalRoom">Room / Hall / Pavilion</p>
+                </div>
+            </div>
+
+            <!-- Description -->
+            <div class="event-detail-section">
+                <h4>About This Event</h4>
+                <p id="eventModalDescription">Event details and activities.</p>
+            </div>
+
+            <!-- Organizer & Attendees -->
+            <div class="event-detail-grid">
+                <div class="event-grid-item">
+                    <span class="eg-label">Host / Organizer</span>
+                    <strong id="eventModalOrganizer">Department / Guild</strong>
+                </div>
+                <div class="event-grid-item">
+                    <span class="eg-label">Target Audience</span>
+                    <strong id="eventModalAttendees">Students & Faculty</strong>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="event-actions-bar">
+                <button class="event-action-btn primary" id="eventModalNavigateBtn">
+                    🧭 Directions to Venue
+                </button>
+                <button class="event-action-btn secondary" id="eventModalShowMapBtn">
+                    📍 Locate on Map
+                </button>
+                <a href="#" target="_blank" rel="noopener noreferrer" class="event-action-btn calendar-btn" id="eventModalCalendarBtn">
+                    📅 Add to Calendar
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Campus Event Modal (For Guild, Clubs, Lecturers) -->
+<div id="addEventModal" class="event-modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="addEventModalTitle">
+    <div class="event-modal-card add-event-card">
+        <button class="event-modal-close" id="addEventModalClose" aria-label="Close add event dialog">✕</button>
+        
+        <div class="event-modal-header">
+            <span class="event-modal-category-badge" style="background:#0bce3b;">➕ Noticeboard</span>
+            <h2 id="addEventModalTitle">Post Campus Event</h2>
+            <p style="font-size:12.5px; color:#64748b; margin-top:4px;">Publish an upcoming activity, symposium, match, or workshop on Kyambogo map.</p>
+        </div>
+
+        <!-- Gemini AI Smart Notice Auto-Drafter -->
+        <div class="ai-notice-assist-card">
+            <div class="ai-assist-header">
+                <span class="ai-sparkle-badge">✨ Kyambogo AI Auto-Drafter</span>
+                <span class="ai-model-tag">Gemini Powered</span>
+            </div>
+            <p class="ai-assist-sub">Have unformatted details? Type or paste rough notes and AI will auto-fill title, venue, category, date, and agenda.</p>
+            <div class="ai-input-row">
+                <input type="text" id="aiNoticePromptInput" placeholder="e.g. Dean meeting first years Thursday 2pm at Faculty of Arts Hall about registration..." />
+                <button type="button" id="aiEnhanceNoticeBtn" class="ai-generate-btn">
+                    <span id="aiEnhanceBtnSpinner" style="display:none;">⏳</span>
+                    <span id="aiEnhanceBtnText">⚡ Auto-Fill</span>
+                </button>
+            </div>
+            <div id="aiNoticeStatus" class="ai-notice-status" style="display: none;"></div>
+        </div>
+
+        <form id="addEventForm" class="add-event-form">
+            <div class="form-group">
+                <label for="eventInputTitle">Event Title *</label>
+                <input type="text" id="eventInputTitle" required placeholder="e.g. SCIS Code Fest 2026" />
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="eventInputCategory">Category</label>
+                    <select id="eventInputCategory">
+                        <option value="academic">📚 Academic & Workshop</option>
+                        <option value="tech">💻 Tech & Innovation</option>
+                        <option value="sports">⚽ Sports & Athletics</option>
+                        <option value="career">💼 Career & Internship</option>
+                        <option value="guild">🏛️ Guild & Student Life</option>
+                        <option value="cultural">🎨 Cultural & Arts</option>
+                        <option value="ceremony">🎓 Ceremony / Graduation</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="eventInputBuilding">Campus Venue *</label>
+                    <select id="eventInputBuilding" required>
+                        <option value="">Select building location...</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="eventInputDate">Date *</label>
+                    <input type="date" id="eventInputDate" required />
+                </div>
+                <div class="form-group">
+                    <label for="eventInputTime">Time</label>
+                    <input type="text" id="eventInputTime" placeholder="e.g. 10:00 AM - 02:00 PM" />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="eventInputRoom">Specific Room / Hall / Pavilion</label>
+                <input type="text" id="eventInputRoom" placeholder="e.g. Main Auditorium, Ground Floor" />
+            </div>
+
+            <div class="form-group">
+                <label for="eventInputOrganizer">Organizer / Department</label>
+                <input type="text" id="eventInputOrganizer" placeholder="e.g. Kyambogo Guild Government / SCIS Club" />
+            </div>
+
+            <div class="form-group">
+                <label for="eventInputDescription">Description & Agenda</label>
+                <textarea id="eventInputDescription" rows="3" placeholder="Brief outline of the event, requirements, and speaker info..."></textarea>
+            </div>
+
+            <!-- Campus Admin Permission & Verification Section -->
+            <div class="event-admin-auth-box">
+                <div class="admin-auth-header">
+                    <span class="admin-shield-icon">🛡️</span>
+                    <div>
+                        <strong>Campus Administration Permission</strong>
+                        <p>Campus policy requires admin permission before posting events on the public map.</p>
+                    </div>
+                </div>
+
+                <div class="admin-auth-options">
+                    <label class="admin-option-card active" id="labelOptionPending">
+                        <input type="radio" name="adminAuthMode" value="pending" id="modeSubmitPending" checked />
+                        <div class="admin-option-info">
+                            <strong>📝 Submit Proposal for Admin Approval</strong>
+                            <span>For Guild, clubs & organizers. Reviewed and approved by administration before going live.</span>
+                        </div>
+                    </label>
+
+                    <label class="admin-option-card" id="labelOptionInstant">
+                        <input type="radio" name="adminAuthMode" value="instant" id="modeAdminInstant" />
+                        <div class="admin-option-info">
+                            <strong>🔑 Admin Authorization (Instant Publish)</strong>
+                            <span>Enter admin passcode to authorize and publish immediately.</span>
+                        </div>
+                    </label>
+                </div>
+
+                <div id="adminPasscodeInputGroup" style="display: none;" class="admin-pass-input-row">
+                    <label for="eventInputAdminKey">Admin Passcode</label>
+                    <input type="password" id="eventInputAdminKey" placeholder="Enter admin passcode (e.g. kyuAdmin2026)" autocomplete="off" />
+                    <small>Default administration key: <code>kyuAdmin2026</code></small>
+                </div>
+            </div>
+
+            <button type="submit" id="eventSubmitActionBtn" class="pwa-action-primary-btn" style="margin-top: 10px; width: 100%;">
+                📨 Submit for Admin Approval
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Admin Events Approval Queue Modal -->
+<div id="adminApprovalsModal" class="event-modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="adminApprovalsModalTitle">
+    <div class="event-modal-card admin-approvals-card">
+        <div class="admin-modal-top-actions">
+            <button type="button" id="adminModalLockBtn" class="admin-modal-lock-btn" title="Lock admin portal and exit">🔒 Lock & Exit</button>
+            <button class="event-modal-close" id="adminApprovalsModalClose" aria-label="Close and lock admin approvals dialog">✕</button>
+        </div>
+        
+        <div class="event-modal-header" style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);">
+            <span class="event-modal-category-badge" style="background:#6366f1;">🛡️ Administrator Portal</span>
+            <h2 id="adminApprovalsModalTitle">Event Approvals & Calendar</h2>
+            <p style="font-size:12px; color:#cbd5e1; margin-top:4px;">Review submissions and synchronize Kyambogo official academic calendar.</p>
+        </div>
+
+        <div class="admin-approvals-body">
+            <!-- Passcode prompt if not yet authenticated -->
+            <div id="adminAuthPrompt" class="admin-auth-prompt-box">
+                <div class="admin-lock-icon-hero">🔐</div>
+                <p><strong>Admin Portal is Locked.</strong><br>Enter the Kyambogo Admin Passcode to view approvals, traffic metrics, and AI chat logs:</p>
+                <div class="admin-auth-input-row">
+                    <input type="password" id="adminPortalPassInput" placeholder="Enter admin passcode" />
+                    <button type="button" id="adminPortalUnlockBtn">Unlock</button>
+                </div>
+                <small style="display:block; margin-top:8px; color:#64748b;">Default administration passcode: <code>kyuAdmin2026</code></small>
+            </div>
+
+            <!-- Admin Navigation Tabs (shown once unlocked) -->
+            <div id="adminNavTabs" class="admin-portal-tabs" style="display: none;">
+                <button type="button" class="admin-tab active" id="adminTabEventsBtn">📋 Event Proposals & Calendar</button>
+                <button type="button" class="admin-tab" id="adminTabAnalyticsBtn">📊 User Traffic & AI Chat Insights</button>
+            </div>
+
+            <!-- Tab 1: Pending Events List -->
+            <div id="adminPendingEventsContainer" style="display: none;">
+                <!-- Official Calendar Sync Banner -->
+                <div class="admin-calendar-status-box">
+                    <div class="cal-status-title">
+                        <span>📅 Kyambogo Official Calendar</span>
+                        <span class="cal-status-badge">MongoDB Live</span>
+                    </div>
+                    <p>Sync official academic registrar calendar, examinations, sports & guild galas directly into MongoDB and map dataset.</p>
+                    <button type="button" id="adminSyncCalendarBtn" class="admin-sync-cal-btn">
+                        <span>🔄</span> <span id="adminSyncCalText">Sync University Calendar Now</span>
+                    </button>
+                </div>
+
+                <div class="admin-queue-header-row">
+                    <strong id="adminPendingStatusText">Pending Submissions: 0</strong>
+                    <div class="admin-queue-actions">
+                        <button type="button" id="adminRefreshPendingBtn" class="admin-refresh-btn" title="Refresh pending submissions">🔄 Refresh</button>
+                        <button type="button" id="adminLockQueueBtn" class="admin-lock-btn" title="Lock portal immediately">🔒 Lock Portal</button>
+                    </div>
+                </div>
+                <div id="adminPendingEventsList" class="admin-pending-events-list">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Tab 2: User Traffic & AI Chat Insights -->
+            <div id="adminAnalyticsSection" style="display: none;" class="admin-analytics-section">
+                <!-- 4 Metrics Summary Cards -->
+                <div class="analytics-metrics-grid">
+                    <div class="analytics-metric-card">
+                        <span class="metric-icon">👥</span>
+                        <div class="metric-data">
+                            <span class="metric-val" id="metricUniqueVisitors">0</span>
+                            <span class="metric-lbl">Unique Visitors</span>
+                        </div>
+                    </div>
+                    <div class="analytics-metric-card">
+                        <span class="metric-icon">🟢</span>
+                        <div class="metric-data">
+                            <span class="metric-val" id="metricTodayActive">0</span>
+                            <span class="metric-lbl">Active Today</span>
+                        </div>
+                    </div>
+                    <div class="analytics-metric-card">
+                        <span class="metric-icon">🗺️</span>
+                        <div class="metric-data">
+                            <span class="metric-val" id="metricTotalVisits">0</span>
+                            <span class="metric-lbl">Map Sessions</span>
+                        </div>
+                    </div>
+                    <div class="analytics-metric-card">
+                        <span class="metric-icon">💬</span>
+                        <div class="metric-data">
+                            <span class="metric-val" id="metricTotalChats">0</span>
+                            <span class="metric-lbl">AI Questions Handled</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Logs Explorer Container -->
+                <div class="admin-chats-container">
+                    <div class="admin-chats-header">
+                        <div>
+                            <strong>💬 Stored User Chats & AI Responses</strong>
+                            <p style="font-size:11.5px; color:#64748b; margin:2px 0 0;">Inquiries logged in real-time to analyze student navigation needs and enhance AI answers.</p>
+                        </div>
+                        <div class="admin-chats-actions">
+                            <button type="button" id="adminRefreshChatsBtn" class="admin-refresh-btn">🔄 Refresh</button>
+                            <button type="button" id="adminExportChatsBtn" class="admin-export-btn">📥 Export JSON</button>
+                        </div>
+                    </div>
+                    <div id="adminChatsLogList" class="admin-chats-list">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- App QR Code Modal (Scan with Phone Camera to Open / Install the App) -->
+<div id="appQrModal" class="event-modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="appQrModalTitle">
+    <div class="app-qr-modal-card">
+        <button class="event-modal-close" id="appQrModalClose" aria-label="Close QR dialog">✕</button>
+        
+        <div class="app-qr-header">
+            <div class="app-qr-icon-wrap">
+                <span class="qr-mobile-icon">📲</span>
+            </div>
+            <h3 id="appQrModalTitle">Scan to Get the App</h3>
+            <p>Scan with your phone camera to open and use Kyambogo Map instantly on mobile.</p>
+        </div>
+
+        <div class="app-qr-body">
+            <!-- Rendered QR Code Canvas Container -->
+            <div class="app-qr-canvas-box">
+                <canvas id="appQrCanvas" width="220" height="220"></canvas>
+                <div class="qr-brand-center-pill">
+                    <span class="qr-pill-dot">🟢</span> Kyambogo Map
+                </div>
+            </div>
+
+            <!-- App URL Display & Copy -->
+            <div class="app-qr-url-row">
+                <code id="appQrUrlDisplay">Loading URL...</code>
+                <button id="appQrCopyBtn" class="app-qr-copy-btn">📋 Copy</button>
+            </div>
+
+            <!-- Configurable Production / Upload URL -->
+            <div class="app-qr-url-config-box">
+                <div class="url-config-header">
+                    <span>QR Destination:</span>
+                    <button type="button" id="appQrEditUrlToggle" class="url-config-edit-toggle">✏️ Change / Custom URL</button>
+                </div>
+                <div id="appQrEditUrlContainer" style="display: none;" class="url-config-input-row">
+                    <input type="url" id="appQrCustomUrlInput" placeholder="e.g. https://your-domain.com or upload link" />
+                    <button type="button" id="appQrApplyUrlBtn">Apply</button>
+                </div>
+                <div id="appQrDevWarning" class="app-qr-dev-notice" style="display: none;">
+                    <span>ℹ️ <b>Live Deployment Note:</b> You are currently in Google AI Studio dev preview (<code>ais-dev-...</code>), which requires Google developer login when scanned on external phones. When you upload or publish your site (e.g. university server or custom domain), click <b>"Change / Custom URL"</b> to generate your clean public QR code!</span>
+                </div>
+            </div>
+
+            <!-- How to install info strip -->
+            <div class="app-qr-instructions">
+                <div class="qr-step-item">
+                    <span class="step-badge">1</span>
+                    <span>Open phone <strong>Camera</strong></span>
+                </div>
+                <div class="qr-step-item">
+                    <span class="step-badge">2</span>
+                    <span>Point at QR code & tap link</span>
+                </div>
+                <div class="qr-step-item">
+                    <span class="step-badge">3</span>
+                    <span>Tap <strong>Add to Home Screen</strong></span>
+                </div>
+            </div>
+
+            <!-- Action buttons: Share & Download QR for printing -->
+            <div class="app-qr-actions-row">
+                <button id="appQrDownloadBtn" class="app-qr-action-btn secondary">
+                    💾 Save QR Image
+                </button>
+                <button id="appQrShareBtn" class="app-qr-action-btn primary">
+                    🔗 Share Link
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Live Campus Events Wallpaper & Ambient Bottom Bulletin -->
+<div id="liveEventsWallpaperBar" class="live-events-wallpaper-bar" role="region" aria-label="Live Campus Events Wallpaper">
+    <div class="live-wallpaper-header">
+        <div class="live-status-indicator">
+            <span class="live-pulse-dot"></span>
+            <span class="live-status-label">LIVE CAMPUS EVENTS</span>
+            <span class="live-count-chip" id="liveWallpaperCountChip">9 Active</span>
+        </div>
+        <div class="live-header-actions">
+            <button id="fullscreenWallpaperBtn" class="live-action-icon-btn" title="Open Fullscreen Ambient Live Wallpaper Mode" aria-label="Fullscreen Live Wallpaper">
+                <span>🖼️ Live Wallpaper</span>
+            </button>
+            <button id="toggleWallpaperCollapseBtn" class="live-action-icon-btn collapse-toggle" title="Collapse / Expand Events Bar" aria-label="Toggle Events Bar">
+                <span id="collapseIcon">▼</span>
+            </button>
+        </div>
+    </div>
+    <div class="live-wallpaper-scroll-container" id="liveWallpaperScrollContainer">
+        <div class="live-wallpaper-track" id="liveWallpaperTrack">
+            <!-- Dynamically populated live event cards with ambient badges and direct fly-to-map navigation -->
+        </div>
+    </div>
+</div>
+
+<!-- Minimized Floating Live Events Badge (when bottom bar is collapsed) -->
+<button id="liveEventsPillBtn" class="live-events-pill-btn" style="display: none;" title="Open Live Events Wallpaper Bar" aria-label="Open Live Events">
+    <span class="live-pulse-dot"></span>
+    <span class="pill-title">Live Events</span>
+    <span class="pill-badge" id="livePillBadge">9</span>
+</button>
+
+<!-- Fullscreen Ambient Live Wallpaper Mode / Screen Saver -->
+<div id="fullscreenWallpaperModal" class="fullscreen-wallpaper-modal" style="display: none;" role="dialog" aria-modal="true" aria-label="Campus Live Wallpaper">
+    <div class="wallpaper-ambient-backdrop"></div>
+    <div class="wallpaper-overlay-content">
+        <div class="wallpaper-top-bar">
+            <div class="wallpaper-clock-box">
+                <div class="wallpaper-live-time" id="wallpaperLiveTime">12:00:00 PM</div>
+                <div class="wallpaper-live-date" id="wallpaperLiveDate">Thursday, 15 October 2026 • Kampala (EAT)</div>
+            </div>
+            <div class="wallpaper-brand-box">
+                <span class="wallpaper-badge">🎓 KYAMBOGO UNIVERSITY</span>
+                <h2 class="wallpaper-title">Live Campus Activities & Events</h2>
+            </div>
+            <button id="closeWallpaperModalBtn" class="wallpaper-close-btn" aria-label="Exit Live Wallpaper">✕ Exit</button>
+        </div>
+        <div class="wallpaper-events-grid" id="wallpaperEventsGrid">
+            <!-- Large rich ambient cards with live status, details & navigation -->
+        </div>
+        <div class="wallpaper-bottom-bar">
+            <span class="live-ticker-notice">⚡ Real-time Notice Board • Completed events and passed deadlines are automatically pruned.</span>
+            <button class="wallpaper-back-map-btn" id="wallpaperBackToMapBtn">🗺️ Return to Map</button>
+        </div>
+    </div>
+</div>
+
+<!-- Floating Map Bottom-Left Control: App QR Code (Icon only, no text) -->
+<button id="bottomLeftQrBtn" class="floating-bottom-qr-btn" title="Scan QR Code to Get Mobile App on Phone" aria-label="Get App QR Code">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+        <path d="M4 4h6v6H4V4zm2 2v2h2V6H6zm8-2h6v6h-6V4zm2 2v2h2V6h-2zM4 14h6v6H4v-6zm2 2v2h2v-2H6zm10 0h2v2h-2v-2zm-2-2h2v2h-2v-2zm4 4h2v2h-2v-2zm-2 2h2v2h-2v-2zm4-2h2v2h-2v-2zm0-4h2v2h-2v-2zm-6 2h2v2h-2v-2zM2 2v8h8V2H2zm12 0v8h8V2h-8zM2 12v10h10V12H2zm12 10h4v-2h-4v2z"/>
+    </svg>
+</button>
+
+<!-- Floating Map Bottom Control: App / Play Store at Right End -->
+<button id="bottomInstallAppBtn" class="floating-bottom-app-btn" title="Install on Android, iOS or package for Google Play Store" aria-label="App / Play Store">
+    <span class="btn-icon">📲</span>
+    <span class="btn-text">App / Play Store</span>
+</button>
+
+<!-- Mobile Landscape Auto-Rotate Helper Banner -->
+<div id="landscapeRotateBanner" class="landscape-rotate-banner" style="display: none;">
+    <div class="rotate-banner-content">
+        <span class="rotate-icon">🔄</span>
+        <div class="rotate-text">
+            <strong>Rotate to Landscape View</strong>
+            <span>Rotate phone horizontally for full campus map</span>
+        </div>
+        <button id="forceLandscapeBtn" class="force-landscape-btn">⛶ Rotate</button>
+        <button id="dismissRotateBtn" class="dismiss-rotate-btn" title="Dismiss">✕</button>
+    </div>
+</div>
+
+<!-- Kyambogo Smart Campus AI Assistant Modal -->
+<div id="campusAiModal" class="event-modal-overlay campus-ai-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="campusAiModalTitle">
+    <div class="event-modal-card campus-ai-card">
+        <button class="event-modal-close" id="campusAiModalClose" aria-label="Close AI Assistant">✕</button>
+        
+        <div class="campus-ai-header">
+            <div class="ai-bot-avatar">✨</div>
+            <div class="ai-header-info">
+                <h2 id="campusAiModalTitle">Kyambogo Campus AI Guide</h2>
+                <p>Grounded with 48 surveyed buildings, 10 faculties, 37 departments & live notice board.</p>
+            </div>
+        </div>
+
+        <!-- Quick Suggestion Chips -->
+        <div class="campus-ai-quick-chips">
+            <button type="button" class="ai-chip-prompt active-ai-chip" data-prompt="Where am I located on campus?">📍 Where Am I Located?</button>
+            <button type="button" class="ai-chip-prompt" data-prompt="Where do I go for admissions?">🎓 Admissions (Faculty Heads)</button>
+            <button type="button" class="ai-chip-prompt" data-prompt="What building is closest to me?">🏢 Closest Building to Me</button>
+            <button type="button" class="ai-chip-prompt" data-prompt="Where is the Faculty of Arts?">🏛️ Faculty of Arts</button>
+            <button type="button" class="ai-chip-prompt" data-prompt="Where are the School of Computing offices vs Library offices?">💻 Computing vs Library</button>
+            <button type="button" class="ai-chip-prompt" data-prompt="Where is the East End Dining Hall?">🍽️ East End Dining</button>
+            <button type="button" class="ai-chip-prompt" data-prompt="What notices or events are on the board?">📌 Notice Board</button>
+        </div>
+
+        <!-- Scrollable Chat Area -->
+        <div class="campus-ai-messages" id="campusAiMessages">
+            <div class="ai-msg ai-bot-msg">
+                <div class="ai-msg-bubble">
+                    <strong>Hello! 👋 I'm your Interactive Kyambogo University AI Navigator.</strong>
+                    <p style="margin: 4px 0 8px;">Ask me <b>"Where am I located?"</b>, find lecture rooms, get live GPS walking directions, or explore notice board events!</p>
+                    <div class="ai-bot-card-action">
+                        <button type="button" class="ai-action-btn-detect" onclick="window.requestUserLocationForAi && window.requestUserLocationForAi()">
+                            📍 Detect My Location
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Input Bar -->
+        <form id="campusAiForm" class="campus-ai-input-form">
+            <input type="text" id="campusAiInput" placeholder="Ask about places, rooms, deans, or walking directions..." autocomplete="off" />
+            <button type="submit" id="campusAiSendBtn" class="campus-ai-send-btn" aria-label="Send query">
+                <span id="campusAiSendText">Send ✈️</span>
+            </button>
+        </form>
+    </div>
+</div>
+
+<script type="module" src="/script.js"></script>
+
+</body>
+</html>

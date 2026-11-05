@@ -1,0 +1,14 @@
+{
+  "appId": "org.kyambogo.campusmap",
+  "appName": "Kyambogo Digital Campus Map",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "Geolocation": {
+      "permissions": ["location"]
+    }
+  }
+}
