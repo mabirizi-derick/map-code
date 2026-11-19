@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Kyambogo Digital Campus Map</title>
     <meta name="description" content="Digital campus map and navigation system for Kyambogo University to locate faculties, departments, staff offices, and department heads with interactive routing.">
     <meta property="og:title" content="Kyambogo Digital Campus Map">
@@ -116,19 +116,35 @@
 
 <div id="locationStatus"></div>
 
-<!-- Active Shortest Route Walking Navigation Banner -->
-<div id="activeNavigationBanner" class="active-navigation-banner" style="display: none;" role="region" aria-label="Walking Navigation Banner">
+<!-- Active Dual Route Navigation Banner (🔴 Shortest Shortcuts in Red vs 🟢 Official Roads in Green) -->
+<div id="activeNavigationBanner" class="active-navigation-banner" style="display: none;" role="region" aria-label="Campus Walking Navigation">
     <div class="nav-banner-left">
-        <div class="nav-badge-pill">
-            <span class="nav-pulse-dot"></span>
-            <span>SHORTEST WALKING ROUTE</span>
+        <div class="nav-banner-header-row">
+            <div class="nav-dest-wrap">
+                <span class="nav-dest-icon">🎯</span>
+                <strong id="navDestTitle">Destination</strong>
+            </div>
+            <span class="nav-save-pill" id="navSavePill" style="display: none;">⚡ Shortcut saves -- m</span>
         </div>
-        <div class="nav-main-info">
-            <strong id="navDestTitle">Destination</strong>
-            <span class="nav-meta-dist" id="navMetaDist">-- m • ~-- min</span>
+        <!-- Dual Route Selector Chips -->
+        <div class="nav-routes-dual-selector" id="navRoutesDualSelector">
+            <button type="button" class="nav-route-chip chip-shortest active" id="chipShortestRoute" title="View Shortest Path via Campus Shortcuts (Red Line)">
+                <span class="chip-color-dot red-dot"></span>
+                <div class="chip-info">
+                    <span class="chip-title">🔴 Shortest (Shortcuts)</span>
+                    <span class="chip-meta" id="navShortestMeta">-- m • ~-- min</span>
+                </div>
+            </button>
+            <button type="button" class="nav-route-chip chip-normal" id="chipNormalRoute" title="View Normal Route via Official Roads (Green Line)">
+                <span class="chip-color-dot green-dot"></span>
+                <div class="chip-info">
+                    <span class="chip-title">🟢 Normal (Official Roads)</span>
+                    <span class="chip-meta" id="navNormalMeta">-- m • ~-- min</span>
+                </div>
+            </button>
         </div>
         <div class="nav-step-instruction" id="navStepInstruction">
-            Calculating optimal campus footpath...
+            Comparing campus pedestrian shortcuts (red) vs official roads (green)...
         </div>
     </div>
     <div class="nav-banner-actions">

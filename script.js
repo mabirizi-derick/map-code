@@ -130,6 +130,17 @@ layerSatBtn.addEventListener("click", () => {
     showStatus("Switched to High-Resolution Satellite View");
 });
 
+const topMapLayersBtn = document.getElementById("topMapLayersBtn");
+if (topMapLayersBtn) {
+    topMapLayersBtn.addEventListener("click", () => {
+        if (map.hasLayer(satelliteTileLayer)) {
+            layerStreetBtn.click();
+        } else {
+            layerSatBtn.click();
+        }
+    });
+}
+
 // Notification helper (replaces window.alert for clean iframe compatibility)
 function showStatus(message, duration = 3500) {
     const statusEl = document.getElementById("locationStatus");
@@ -292,7 +303,13 @@ let navigationActive = false;
 let destination = null;
 let routeLine = null;
 let routeCasingLine = null;
+let shortestRouteLine = null;
+let shortestCasingLine = null;
+let normalRouteLine = null;
+let normalCasingLine = null;
 let routeDestMarker = null;
+let searchResultLayer = null;
+let activeFocusedRoute = "shortest";
 let lastRouteLat = null;
 let lastRouteLng = null;
 const ROUTE_UPDATE_DISTANCE = 15; // meters
@@ -391,6 +408,15 @@ function setUserLocationMarker(lat, lng, accuracy = 15, popupTitle = "You are he
 // Navigation handler
 function selectDestination(name, lat, lng) {
     console.log("Selecting destination:", name, lat, lng);
+
+    // Clear any temporary search markers or open popups cleanly
+    if (searchResultLayer) {
+        searchResultLayer.clearLayers();
+    }
+    const srEl = document.getElementById("searchResults");
+    if (srEl) srEl.innerHTML = "";
+    map.closePopup();
+
     destination = {
         name: name,
         lat: Number(lat),
@@ -1290,6 +1316,153 @@ for (const [u, v] of CAMPUS_WALKWAYS.edges) {
     campusWalkwayAdj[v].push({ to: u, w });
 }
 
+// Official Kyambogo University Paved Road Network (Fallback for Green Normal Route)
+const CAMPUS_OFFICIAL_ROADS = {
+    nodes: {
+        "MAIN_GATE_RD": { id: "MAIN_GATE_RD", name: "Main Gate & Queen's Road", lat: 0.345200, lng: 32.630500 },
+        "EAST_GATE_RD": { id: "EAST_GATE_RD", name: "East End Road Junction", lat: 0.345900, lng: 32.632200 },
+        "SENATE_RD": { id: "SENATE_RD", name: "Senate Roundabout", lat: 0.347450, lng: 32.631660 },
+        "ARTS_RD": { id: "ARTS_RD", name: "Kyambogo Central Drive (Arts)", lat: 0.347750, lng: 32.630050 },
+        "STUDENT_RD": { id: "STUDENT_RD", name: "Central Boulevard (Student Center)", lat: 0.348040, lng: 32.629460 },
+        "PEACE_RD": { id: "PEACE_RD", name: "Peace Park Drive", lat: 0.349010, lng: 32.629820 },
+        "CTF_RD": { id: "CTF_RD", name: "Central Library & CTF Loop", lat: 0.349750, lng: 32.630800 },
+        "ADMIN_RD": { id: "ADMIN_RD", name: "Administration Drive", lat: 0.350200, lng: 32.632600 },
+        "WEST_JUNCTION_RD": { id: "WEST_JUNCTION_RD", name: "West End Road Junction", lat: 0.350320, lng: 32.627860 },
+        "WEST_ENG_RD": { id: "WEST_ENG_RD", name: "Engineering & Medical Road", lat: 0.348400, lng: 32.626300 },
+        "NORTH_SPINE_RD": { id: "NORTH_SPINE_RD", name: "North Campus Road (Mosque)", lat: 0.351520, lng: 32.626550 },
+        "KULUBYA_RD": { id: "KULUBYA_RD", name: "Kulubya & North Hall Road", lat: 0.352660, lng: 32.626070 },
+        "SBE_RD": { id: "SBE_RD", name: "Built Environment Road", lat: 0.355150, lng: 32.626170 },
+        "BARCLAYS_RD": { id: "BARCLAYS_RD", name: "East Academic Road", lat: 0.348200, lng: 32.632900 },
+        "AGRI_RD": { id: "AGRI_RD", name: "Agriculture Road", lat: 0.346500, lng: 32.634100 }
+    },
+    edges: [
+        ["MAIN_GATE_RD", "EAST_GATE_RD"],
+        ["EAST_GATE_RD", "SENATE_RD"],
+        ["SENATE_RD", "BARCLAYS_RD"],
+        ["BARCLAYS_RD", "ADMIN_RD"],
+        ["BARCLAYS_RD", "AGRI_RD"],
+        ["SENATE_RD", "ARTS_RD"],
+        ["ARTS_RD", "STUDENT_RD"],
+        ["STUDENT_RD", "PEACE_RD"],
+        ["PEACE_RD", "CTF_RD"],
+        ["CTF_RD", "ADMIN_RD"],
+        ["PEACE_RD", "WEST_JUNCTION_RD"],
+        ["WEST_JUNCTION_RD", "WEST_ENG_RD"],
+        ["WEST_JUNCTION_RD", "NORTH_SPINE_RD"],
+        ["NORTH_SPINE_RD", "KULUBYA_RD"],
+        ["KULUBYA_RD", "SBE_RD"]
+    ]
+};
+
+const campusOfficialRoadAdj = {};
+for (const k of Object.keys(CAMPUS_OFFICIAL_ROADS.nodes)) {
+    campusOfficialRoadAdj[k] = [];
+}
+for (const [u, v] of CAMPUS_OFFICIAL_ROADS.edges) {
+    const n1 = CAMPUS_OFFICIAL_ROADS.nodes[u];
+    const n2 = CAMPUS_OFFICIAL_ROADS.nodes[v];
+    if (!n1 || !n2) continue;
+    const w = calculateDistanceMeters(n1.lat, n1.lng, n2.lat, n2.lng);
+    campusOfficialRoadAdj[u].push({ to: v, w });
+    campusOfficialRoadAdj[v].push({ to: u, w });
+}
+
+// Helper: Calculate total length of a coordinate polyline in meters
+function calculatePolylineDistanceMeters(coords) {
+    if (!Array.isArray(coords) || coords.length < 2) return 0;
+    let total = 0;
+    for (let i = 1; i < coords.length; i++) {
+        total += calculateDistanceMeters(coords[i - 1][0], coords[i - 1][1], coords[i][0], coords[i][1]);
+    }
+    return Math.round(total);
+}
+
+// Helper: Generic Dijkstra connecting virtual START & END to K nearest nodes (prevents backtracking)
+function runVirtualGraphDijkstra(nodesObj, adjObj, startLat, startLng, endLat, endLng, kNearest = 4) {
+    const nodeKeys = Object.keys(nodesObj);
+    if (nodeKeys.length === 0) return null;
+
+    const getKNearest = (lat, lng) => {
+        return nodeKeys
+            .map(id => ({ id, w: calculateDistanceMeters(lat, lng, nodesObj[id].lat, nodesObj[id].lng) }))
+            .sort((a, b) => a.w - b.w)
+            .slice(0, kNearest);
+    };
+
+    const startNeighbors = getKNearest(startLat, startLng);
+    const endNeighbors = getKNearest(endLat, endLng);
+
+    const START_ID = "__V_START__";
+    const END_ID = "__V_END__";
+    const allIds = [START_ID, ...nodeKeys, END_ID];
+
+    const dist = {};
+    const prev = {};
+    const unvisited = new Set(allIds);
+    for (const id of allIds) dist[id] = Infinity;
+    dist[START_ID] = 0;
+
+    // Virtual start adjacency
+    const startAdj = startNeighbors.map(n => ({ to: n.id, w: n.w }));
+    // Virtual reverse lookup for end connections
+    const endDistMap = {};
+    for (const n of endNeighbors) {
+        endDistMap[n.id] = n.w;
+    }
+
+    while (unvisited.size > 0) {
+        let u = null;
+        let minD = Infinity;
+        for (const id of unvisited) {
+            if (dist[id] < minD) {
+                minD = dist[id];
+                u = id;
+            }
+        }
+        if (u === null || u === END_ID || minD === Infinity) break;
+        unvisited.delete(u);
+
+        const neighbors = u === START_ID ? startAdj : (adjObj[u] ? [...adjObj[u]] : []);
+        if (endDistMap[u] !== undefined) {
+            neighbors.push({ to: END_ID, w: endDistMap[u] });
+        }
+
+        for (const edge of neighbors) {
+            if (!unvisited.has(edge.to)) continue;
+            const alt = dist[u] + edge.w;
+            if (alt < dist[edge.to]) {
+                dist[edge.to] = alt;
+                prev[edge.to] = u;
+            }
+        }
+    }
+
+    if (!prev[END_ID] && dist[END_ID] === Infinity) return null;
+
+    const path = [];
+    let curr = END_ID;
+    while (curr) {
+        path.unshift(curr);
+        curr = prev[curr];
+    }
+
+    const coords = path.map(id => {
+        if (id === START_ID) return [startLat, startLng];
+        if (id === END_ID) return [endLat, endLng];
+        return [nodesObj[id].lat, nodesObj[id].lng];
+    });
+    const names = path
+        .filter(id => id !== START_ID && id !== END_ID)
+        .map(id => nodesObj[id].name);
+
+    return {
+        path,
+        names,
+        coords,
+        distance: Math.round(dist[END_ID])
+    };
+}
+
 // Snaps coordinates to closest campus walkway node
 function findNearestWalkwayNode(lat, lng) {
     let closest = null;
@@ -1366,6 +1539,22 @@ function dijkstraCampusShortestPath(startId, endId) {
 
 // Clear all active navigation lines, markers, and banners
 function clearNavigation() {
+    if (shortestRouteLine) {
+        map.removeLayer(shortestRouteLine);
+        shortestRouteLine = null;
+    }
+    if (shortestCasingLine) {
+        map.removeLayer(shortestCasingLine);
+        shortestCasingLine = null;
+    }
+    if (normalRouteLine) {
+        map.removeLayer(normalRouteLine);
+        normalRouteLine = null;
+    }
+    if (normalCasingLine) {
+        map.removeLayer(normalCasingLine);
+        normalCasingLine = null;
+    }
     if (routeLine) {
         map.removeLayer(routeLine);
         routeLine = null;
@@ -1378,10 +1567,14 @@ function clearNavigation() {
         map.removeLayer(routeDestMarker);
         routeDestMarker = null;
     }
+    if (searchResultLayer) {
+        searchResultLayer.clearLayers();
+    }
     navigationActive = false;
     destination = null;
     lastRouteLat = null;
     lastRouteLng = null;
+    document.body.classList.remove("nav-active");
 
     const navBanner = document.getElementById("activeNavigationBanner");
     if (navBanner) navBanner.style.display = "none";
@@ -1395,16 +1588,23 @@ if (cancelNavBannerBtn) {
     cancelNavBannerBtn.addEventListener("click", clearNavigation);
 }
 
-// 6. ROUTE CALCULATION (SHORTEST CAMPUS PATH GUARANTEED)
+// 6. DUAL ROUTE CALCULATION (SHORTEST SHORTCUTS IN RED, OFFICIAL ROADS IN GREEN)
 function getRoute() {
     if (!userMarker) {
-        showStatus("Please turn on My Location first.");
-        return;
+        const campusCenterLat = 0.3476;
+        const campusCenterLng = 32.6316;
+        setUserLocationMarker(campusCenterLat, campusCenterLng, 25, "Campus Reference Point");
+        showStatus("Using Kyambogo Central Campus as your reference location.");
     }
 
     if (!destination) {
         showStatus("Please select a destination or office first.");
         return;
+    }
+
+    // Clear any temporary search overlay pins
+    if (searchResultLayer) {
+        searchResultLayer.clearLayers();
     }
 
     const start = userMarker.getLatLng();
@@ -1420,163 +1620,252 @@ function getRoute() {
         return;
     }
 
-    console.log("Computing shortest walking route from:", startLat, startLng, "to", endLat, endLng, `(${destName})`);
-
     const directDist = calculateDistanceMeters(startLat, startLng, endLat, endLng);
 
-    // 1. Compute direct campus walkway shortest path (Dijkstra)
-    let campusCoordinates = [];
-    let campusDistance = 0;
-    let campusWaypointsSummary = "Direct walkway";
+    // 1. Compute SHORTEST PATH via campus pedestrian shortcuts (virtual-connected Dijkstra, zero backtracking)
+    let shortcutCoords = [];
+    let shortcutDistance = 0;
+    let shortcutSummary = "Direct campus shortcut";
 
-    if (directDist <= 70) {
-        // Very close / same courtyard: direct pedestrian walk
-        campusCoordinates = [[startLat, startLng], [endLat, endLng]];
-        campusDistance = Math.round(directDist);
-        campusWaypointsSummary = "Direct courtyard path";
+    if (directDist <= 95) {
+        shortcutCoords = [[startLat, startLng], [endLat, endLng]];
+        shortcutDistance = Math.round(directDist);
+        shortcutSummary = "Direct courtyard shortcut";
     } else {
-        const startNode = findNearestWalkwayNode(startLat, startLng);
-        const endNode = findNearestWalkwayNode(endLat, endLng);
-
-        if (startNode && endNode) {
-            const dijkstraResult = dijkstraCampusShortestPath(startNode.id, endNode.id);
-            if (dijkstraResult && dijkstraResult.coords.length > 0) {
-                const distToStartNode = calculateDistanceMeters(startLat, startLng, startNode.lat, startNode.lng);
-                const distFromEndNode = calculateDistanceMeters(endNode.lat, endNode.lng, endLat, endLng);
-                campusDistance = Math.round(distToStartNode + dijkstraResult.distance + distFromEndNode);
-                campusCoordinates = [
-                    [startLat, startLng],
-                    ...dijkstraResult.coords,
-                    [endLat, endLng]
-                ];
-
-                // Build readable turn-by-turn guidance
-                if (dijkstraResult.names.length > 2) {
-                    campusWaypointsSummary = `via ${dijkstraResult.names[1]} and ${dijkstraResult.names[dijkstraResult.names.length - 2]}`;
-                } else if (dijkstraResult.names.length === 2) {
-                    campusWaypointsSummary = `via ${dijkstraResult.names[0]}`;
-                } else {
-                    campusWaypointsSummary = `via ${startNode.name}`;
-                }
+        const shortcutResult = runVirtualGraphDijkstra(
+            CAMPUS_WALKWAYS.nodes,
+            campusWalkwayAdj,
+            startLat,
+            startLng,
+            endLat,
+            endLng,
+            4
+        );
+        if (shortcutResult && shortcutResult.coords.length >= 2) {
+            shortcutCoords = shortcutResult.coords;
+            shortcutDistance = shortcutResult.distance;
+            if (shortcutResult.names.length >= 2) {
+                shortcutSummary = `via ${shortcutResult.names[0]} & ${shortcutResult.names[shortcutResult.names.length - 1]}`;
+            } else if (shortcutResult.names.length === 1) {
+                shortcutSummary = `via ${shortcutResult.names[0]}`;
             }
         }
     }
 
-    // Fallback if campus network wasn't generated
-    if (campusCoordinates.length === 0) {
-        campusCoordinates = [[startLat, startLng], [endLat, endLng]];
-        campusDistance = Math.round(directDist);
+    if (shortcutCoords.length === 0) {
+        shortcutCoords = [[startLat, startLng], [endLat, endLng]];
+        shortcutDistance = Math.round(directDist);
     }
 
-    // 2. Query OSRM in parallel with timeout, and compare distances to guarantee shortest route
-    const routeUrl = `https://router.project-osrm.org/route/v1/foot/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&continue_straight=false`;
-
+    // 2. Query OSRM Driving Profile for OFFICIAL ROADS (Normal Route in Green)
+    const officialRoadUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&continue_straight=true`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2400);
+    const timeoutId = setTimeout(() => controller.abort(), 2600);
 
-    fetch(routeUrl, { signal: controller.signal })
+    fetch(officialRoadUrl, { signal: controller.signal })
         .then(res => res.json())
         .then(data => {
             clearTimeout(timeoutId);
-            let finalCoords = campusCoordinates;
-            let finalDistance = campusDistance;
-            let stepNotice = `Direct campus walkway ${campusWaypointsSummary}`;
+
+            let roadCoords = null;
+            let roadDistance = 0;
 
             if (data && data.code === "Ok" && data.routes && data.routes.length > 0) {
-                const osrmDist = Math.round(data.routes[0].distance);
-                const osrmCoords = data.routes[0].geometry.coordinates.map(pt => [pt[1], pt[0]]);
-                osrmCoords.push([endLat, endLng]);
-
-                // STRICT SHORTEST ROUTE CHECK:
-                // If OSRM distance is significantly longer than the campus footpath distance (OSRM took a long perimeter road detour),
-                // choose our campus shortest footpath! If OSRM is truly shorter or equal, use OSRM.
-                if (osrmDist > 0 && osrmDist < campusDistance * 0.98) {
-                    finalCoords = osrmCoords;
-                    finalDistance = osrmDist;
-                    stepNotice = "Campus pedestrian path";
-                    console.log(`[Route Engine] OSRM shortest: ${osrmDist}m vs campus ${campusDistance}m`);
-                } else {
-                    finalCoords = campusCoordinates;
-                    finalDistance = campusDistance;
-                    const savedDetour = osrmDist > campusDistance ? ` (Saves ${osrmDist - campusDistance}m perimeter detour)` : "";
-                    stepNotice = `⚡ Optimal campus footpath ${campusWaypointsSummary}${savedDetour}`;
-                    console.log(`[Route Engine] Campus Walkway shortest: ${campusDistance}m vs OSRM detour ${osrmDist}m`);
+                const rawCoords = data.routes[0].geometry.coordinates.map(pt => [pt[1], pt[0]]);
+                if (rawCoords.length >= 2) {
+                    const firstPt = rawCoords[0];
+                    const lastPt = rawCoords[rawCoords.length - 1];
+                    if (calculateDistanceMeters(startLat, startLng, firstPt[0], firstPt[1]) > 4) {
+                        rawCoords.unshift([startLat, startLng]);
+                    }
+                    if (calculateDistanceMeters(endLat, endLng, lastPt[0], lastPt[1]) > 4) {
+                        rawCoords.push([endLat, endLng]);
+                    }
+                    roadCoords = rawCoords;
+                    roadDistance = calculatePolylineDistanceMeters(roadCoords);
                 }
-            } else {
-                console.log(`[Route Engine] Using campus walkway network: ${campusDistance}m`);
             }
 
-            renderShortestRoute(finalCoords, finalDistance, destName, stepNotice);
+            processAndRenderDualRoutes(startLat, startLng, endLat, endLng, shortcutCoords, shortcutDistance, roadCoords, roadDistance, destName, shortcutSummary);
         })
-        .catch(err => {
+        .catch(() => {
             clearTimeout(timeoutId);
-            console.log("[Route Engine] Fast fallback to campus walkway shortest path:", err.message);
-            renderShortestRoute(campusCoordinates, campusDistance, destName, `⚡ Direct campus footpath ${campusWaypointsSummary}`);
+            processAndRenderDualRoutes(startLat, startLng, endLat, endLng, shortcutCoords, shortcutDistance, null, 0, destName, shortcutSummary);
         });
 }
 
-// Render the shortest route polyline and navigation status banner
-function renderShortestRoute(routeCoordinates, distanceMeters, destName, stepNotice) {
+// Keep Red strictly for Shortest Shortcuts & Green strictly for Official Roads
+function processAndRenderDualRoutes(startLat, startLng, endLat, endLng, shortcutCoords, shortcutDist, officialRoadCoords, officialRoadDist, destName, shortcutSummary) {
+    let normalCoords = officialRoadCoords;
+    let normalDistance = officialRoadDist;
+
+    // Offline / timeout fallback using CAMPUS_OFFICIAL_ROADS Dijkstra
+    if (!normalCoords || normalCoords.length < 2 || normalDistance <= 0) {
+        const roadFallback = runVirtualGraphDijkstra(
+            CAMPUS_OFFICIAL_ROADS.nodes,
+            campusOfficialRoadAdj,
+            startLat,
+            startLng,
+            endLat,
+            endLng,
+            2
+        );
+        if (roadFallback && roadFallback.coords.length >= 2) {
+            normalCoords = roadFallback.coords;
+            normalDistance = roadFallback.distance;
+        } else {
+            normalCoords = [[startLat, startLng], [endLat, endLng]];
+            normalDistance = Math.round(calculateDistanceMeters(startLat, startLng, endLat, endLng));
+        }
+    }
+
+    // Ensure Red shortcut path is always <= Green official road distance
+    let finalShortcutCoords = shortcutCoords;
+    let finalShortcutDist = shortcutDist;
+    const directDist = Math.round(calculateDistanceMeters(startLat, startLng, endLat, endLng));
+
+    if (finalShortcutDist > normalDistance && directDist < normalDistance) {
+        // Direct pedestrian shortcut across courtyard is shorter than winding road
+        finalShortcutCoords = [[startLat, startLng], [endLat, endLng]];
+        finalShortcutDist = directDist;
+        shortcutSummary = "Direct pedestrian shortcut";
+    }
+
+    renderDualRoutes(finalShortcutCoords, finalShortcutDist, normalCoords, normalDistance, destName, shortcutSummary);
+}
+
+// Render both routes cleanly (NO glowing red markers at the end)
+function renderDualRoutes(shortestCoords, shortestDistance, normalCoords, normalDistance, destName, shortcutSummary) {
+    // Remove previous route polylines & any old markers
+    if (shortestRouteLine) map.removeLayer(shortestRouteLine);
+    if (shortestCasingLine) map.removeLayer(shortestCasingLine);
+    if (normalRouteLine) map.removeLayer(normalRouteLine);
+    if (normalCasingLine) map.removeLayer(normalCasingLine);
     if (routeLine) map.removeLayer(routeLine);
     if (routeCasingLine) map.removeLayer(routeCasingLine);
-    if (routeDestMarker) map.removeLayer(routeDestMarker);
+    if (routeDestMarker) {
+        map.removeLayer(routeDestMarker);
+        routeDestMarker = null;
+    }
 
-    // 1. Clean white underlay casing for high-contrast visibility against roads & satellite imagery
-    routeCasingLine = L.polyline(routeCoordinates, {
+    // 1. NORMAL ROUTE (GREEN LINE — Official Roads)
+    normalCasingLine = L.polyline(normalCoords, {
         color: '#ffffff',
-        weight: 9,
+        weight: 8.5,
+        opacity: 0.9,
+        lineCap: 'round',
+        lineJoin: 'round'
+    }).addTo(map);
+
+    normalRouteLine = L.polyline(normalCoords, {
+        color: '#16a34a',
+        weight: 5,
         opacity: 0.95,
         lineCap: 'round',
         lineJoin: 'round'
     }).addTo(map);
 
-    // 2. Vibrant Google Maps-style walking blue line
-    routeLine = L.polyline(routeCoordinates, {
-        color: '#1a73e8',
+    const normalMins = Math.max(1, Math.round(normalDistance / 75));
+    normalRouteLine.bindTooltip(`🟢 <b>Normal Route (Official Roads)</b><br>${normalDistance}m • ~${normalMins} min walk`, {
+        sticky: true,
+        className: 'route-tooltip-normal'
+    });
+
+    // 2. SHORTEST PATH (RED LINE — Campus Shortcuts)
+    shortestCasingLine = L.polyline(shortestCoords, {
+        color: '#ffffff',
+        weight: 9.5,
+        opacity: 0.95,
+        lineCap: 'round',
+        lineJoin: 'round'
+    }).addTo(map);
+
+    shortestRouteLine = L.polyline(shortestCoords, {
+        color: '#dc2626',
         weight: 5.5,
         opacity: 1,
         lineCap: 'round',
         lineJoin: 'round'
     }).addTo(map);
 
-    // 3. Destination target pin marker
-    const endPoint = routeCoordinates[routeCoordinates.length - 1];
-    const destIcon = L.divIcon({
-        className: 'dest-target-marker-wrapper',
-        html: `
-            <div style="background:#dc2626; color:white; width:26px; height:26px; border-radius:50%; border:2.5px solid white; box-shadow:0 3px 10px rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800;">
-                🎯
-            </div>
-        `,
-        iconSize: [26, 26],
-        iconAnchor: [13, 13]
+    const shortestMins = Math.max(1, Math.round(shortestDistance / 75));
+    shortestRouteLine.bindTooltip(`🔴 <b>Shortest Path (Shortcuts)</b><br>${shortestDistance}m • ~${shortestMins} min walk`, {
+        sticky: true,
+        className: 'route-tooltip-shortest'
     });
 
-    routeDestMarker = L.marker(endPoint, { icon: destIcon }).addTo(map);
-    routeDestMarker.bindPopup(`
-        <div style="padding:6px; font-family:system-ui, sans-serif;">
-            <b style="color:#0f172a; font-size:13px;">🎯 ${destName}</b>
-            <div style="font-size:11.5px; color:#0369a1; font-weight:700; margin-top:3px;">
-                🚶 Shortest Walk: ${distanceMeters}m (~${Math.max(1, Math.round(distanceMeters / 75))} min)
-            </div>
-        </div>
-    `);
+    // Alias legacy pointers
+    routeLine = shortestRouteLine;
+    routeCasingLine = shortestCasingLine;
 
-    // 4. Update the Active Navigation Banner
+    const diffMeters = Math.max(0, normalDistance - shortestDistance);
+
+    // 3. Update Active Navigation Banner UI
+    document.body.classList.add("nav-active");
     const navBanner = document.getElementById("activeNavigationBanner");
     const navDestTitle = document.getElementById("navDestTitle");
-    const navMetaDist = document.getElementById("navMetaDist");
+    const navShortestMeta = document.getElementById("navShortestMeta");
+    const navNormalMeta = document.getElementById("navNormalMeta");
+    const navSavePill = document.getElementById("navSavePill");
     const navStepInstruction = document.getElementById("navStepInstruction");
-
-    const walkMinutes = Math.max(1, Math.round(distanceMeters / 75)); // standard 4.5 km/h walking speed
+    const chipShortest = document.getElementById("chipShortestRoute");
+    const chipNormal = document.getElementById("chipNormalRoute");
 
     if (navDestTitle) navDestTitle.textContent = destName;
-    if (navMetaDist) navMetaDist.textContent = `${distanceMeters}m • ~${walkMinutes} min walk`;
-    if (navStepInstruction) navStepInstruction.textContent = stepNotice;
+    if (navShortestMeta) navShortestMeta.textContent = `${shortestDistance}m • ~${shortestMins} min`;
+    if (navNormalMeta) navNormalMeta.textContent = `${normalDistance}m • ~${normalMins} min`;
+
+    if (navSavePill) {
+        if (diffMeters > 0) {
+            navSavePill.textContent = `⚡ Shortcut saves ${diffMeters}m`;
+            navSavePill.style.display = "inline-block";
+        } else {
+            navSavePill.style.display = "none";
+        }
+    }
+
+    if (navStepInstruction) {
+        navStepInstruction.textContent = `🔴 Shortcuts: ${shortcutSummary} | 🟢 Normal: Official campus roads`;
+    }
+
     if (navBanner) navBanner.style.display = "flex";
 
-    map.fitBounds(routeLine.getBounds(), { padding: [55, 55], maxZoom: 18 });
-    showStatus(`🚶 Shortest route: ${distanceMeters}m (~${walkMinutes} min) to ${destName}`);
+    // Wire up dual route selector chips
+    if (chipShortest && chipNormal) {
+        chipShortest.onclick = () => {
+            activeFocusedRoute = "shortest";
+            chipShortest.classList.add("active");
+            chipNormal.classList.remove("active");
+            shortestRouteLine.bringToFront();
+            shortestRouteLine.setStyle({ weight: 6.5 });
+            normalRouteLine.setStyle({ weight: 4.5 });
+            if (navStepInstruction) {
+                navStepInstruction.textContent = `🔴 Shortest Path (Shortcuts): ${shortcutSummary}`;
+            }
+            map.fitBounds(shortestRouteLine.getBounds(), { padding: [60, 60], maxZoom: 18 });
+        };
+
+        chipNormal.onclick = () => {
+            activeFocusedRoute = "normal";
+            chipNormal.classList.add("active");
+            chipShortest.classList.remove("active");
+            normalRouteLine.bringToFront();
+            normalRouteLine.setStyle({ weight: 6.5 });
+            shortestRouteLine.setStyle({ weight: 4.5 });
+            if (navStepInstruction) {
+                navStepInstruction.textContent = `🟢 Normal Route: Following Kyambogo official campus roads`;
+            }
+            map.fitBounds(normalRouteLine.getBounds(), { padding: [60, 60], maxZoom: 18 });
+        };
+    }
+
+    shortestRouteLine.on("click", () => chipShortest && chipShortest.click());
+    normalRouteLine.on("click", () => chipNormal && chipNormal.click());
+
+    const combinedBounds = shortestRouteLine.getBounds().extend(normalRouteLine.getBounds());
+    map.fitBounds(combinedBounds, { padding: [65, 65], maxZoom: 18 });
+
+    showStatus(`🚶 🔴 Shortcuts (${shortestDistance}m) vs 🟢 Official Roads (${normalDistance}m)`);
 }
 
 // 7. LOCATION TRACKING
@@ -1932,9 +2221,17 @@ function getLocalSearchResults(searchText) {
     };
 }
 
-// Unified Search Function
-async function performSearch(query) {
-    const searchText = (query || searchBox.value).trim().toLowerCase();
+// Unified Search Function (Displays results both in dropdown AND directly on the map)
+async function performSearch(query, autoFocusFirst = false) {
+    const rawQuery = query !== undefined ? query : searchBox.value;
+    const searchText = (rawQuery || "").trim().toLowerCase();
+
+    // Ensure map search result layer is initialized
+    if (!searchResultLayer) {
+        searchResultLayer = L.featureGroup().addTo(map);
+    }
+    searchResultLayer.clearLayers();
+
     if (!searchText) {
         searchResults.innerHTML = "";
         return;
@@ -1955,53 +2252,106 @@ async function performSearch(query) {
     try {
         searchResults.innerHTML = "";
 
-        const hasAny = (
-            (data.events && data.events.length > 0) ||
-            data.programmes.length > 0 ||
-            data.departments.length > 0 ||
-            data.faculties.length > 0 ||
-            data.offices.length > 0 ||
-            data.buildings.length > 0
-        );
+        const eventsList = Array.isArray(data?.events) ? data.events : [];
+        const programmesList = Array.isArray(data?.programmes) ? data.programmes : [];
+        const departmentsList = Array.isArray(data?.departments) ? data.departments : [];
+        const facultiesList = Array.isArray(data?.faculties) ? data.faculties : [];
+        const officesList = Array.isArray(data?.offices) ? data.offices : [];
+        const buildingsList = Array.isArray(data?.buildings) ? data.buildings : [];
 
-        if (!hasAny) {
-            searchResults.innerHTML = `<div style="padding:14px; color:#64748b; font-size:14px;">No events, programmes, departments, staff offices or buildings found for "<b>${searchText}</b>".</div>`;
+        const totalMatches = eventsList.length + programmesList.length + departmentsList.length + 
+                             facultiesList.length + officesList.length + buildingsList.length;
+
+        if (totalMatches === 0) {
+            searchResults.innerHTML = `<div style="padding:16px; color:#64748b; font-size:13.5px; text-align:center;">No campus events, departments, programmes, offices or buildings found for "<b>${searchText}</b>".</div>`;
+            showStatus(`No campus places found for "${searchText}"`);
             return;
         }
 
+        // =========================================================================
+        // 1. MATCHED LOCATIONS LIST (No glowing red markers spawned on the map!)
+        // =========================================================================
+        const firstFocusTarget =
+            (buildingsList[0] && { lat: Number(buildingsList[0].lat || buildingsList[0].latitude), lng: Number(buildingsList[0].lng || buildingsList[0].longitude), buildingId: buildingsList[0].buildingId, name: buildingsList[0].name }) ||
+            (departmentsList[0] && { lat: Number(departmentsList[0].lat || departmentsList[0].latitude || 0.3476), lng: Number(departmentsList[0].lng || departmentsList[0].longitude || 32.6316), name: `Department of ${departmentsList[0].name}` }) ||
+            (officesList[0] && { lat: Number(officesList[0].latitude || officesList[0].lat), lng: Number(officesList[0].longitude || officesList[0].lng), name: officesList[0].title }) ||
+            (facultiesList[0] && { lat: Number(facultiesList[0].lat || facultiesList[0].latitude), lng: Number(facultiesList[0].lng || facultiesList[0].longitude), name: facultiesList[0].name }) ||
+            (eventsList[0] && { lat: Number(eventsList[0].lat || eventsList[0].latitude), lng: Number(eventsList[0].lng || eventsList[0].longitude), name: eventsList[0].title });
+
+        showStatus(`🔍 Found ${totalMatches} campus places for "${searchText}"`);
+
+        // If user submitted search (Enter or Search button), pan cleanly to the top match without spawning glowing red pins
+        if (autoFocusFirst && firstFocusTarget && !isNaN(firstFocusTarget.lat) && !isNaN(firstFocusTarget.lng)) {
+            map.setView([firstFocusTarget.lat, firstFocusTarget.lng], 18, { animate: true });
+            const matchedBuilding = buildings.find(b => b.buildingId === firstFocusTarget.buildingId) ||
+                buildings.find(b => Math.abs(b.lat - firstFocusTarget.lat) < 0.00012 && Math.abs(b.lng - firstFocusTarget.lng) < 0.00012);
+            if (matchedBuilding && matchedBuilding.marker) {
+                if (!map.hasLayer(matchedBuilding.marker)) map.addLayer(matchedBuilding.marker);
+                matchedBuilding.marker.openPopup();
+            }
+            searchResults.innerHTML = "";
+            return;
+        }
+
+        // =========================================================================
+        // 2. BUILD DROPDOWN SEARCH RESULTS LIST
+        // =========================================================================
+        const topBar = document.createElement("div");
+        topBar.className = "search-results-top-bar";
+        topBar.innerHTML = `
+            <span>✨ ${totalMatches} places found</span>
+            <button type="button" id="btnCloseSearchDrop">✕ Close</button>
+        `;
+        searchResults.appendChild(topBar);
+
+        document.getElementById("btnCloseSearchDrop")?.addEventListener("click", () => {
+            searchResults.innerHTML = "";
+        });
+
         // 0. CAMPUS EVENTS
-        if (data.events && data.events.length > 0) {
+        if (eventsList.length > 0) {
             const header = document.createElement("div");
             header.className = "search-section-header";
             header.style.color = "#7c3aed";
-            header.textContent = `🎉 Upcoming Events (${data.events.length})`;
+            header.innerHTML = `<span>🎉</span> Upcoming Events (${eventsList.length})`;
             searchResults.appendChild(header);
 
-            data.events.forEach(evt => {
+            eventsList.forEach(evt => {
                 const item = document.createElement("div");
                 item.className = "search-item";
                 item.innerHTML = `<span>🎉</span> <div><div>${evt.title}</div><small style="color:#7c3aed; font-weight:600;">${evt.dateFormatted || evt.startDate} &bull; ${evt.buildingName}</small></div>`;
                 item.addEventListener("click", () => {
                     searchResults.innerHTML = "";
-                    map.setView([evt.lat || evt.latitude, evt.lng || evt.longitude], 18);
-                    window.openEventDetails(evt.eventId);
+                    const evtLat = Number(evt.lat || evt.latitude);
+                    const evtLng = Number(evt.lng || evt.longitude);
+                    if (!isNaN(evtLat) && !isNaN(evtLng)) {
+                        map.setView([evtLat, evtLng], 18, { animate: true });
+                    }
+                    if (window.openEventDetails) {
+                        window.openEventDetails(evt.eventId);
+                    }
                 });
                 searchResults.appendChild(item);
             });
         }
 
         // 1. PROGRAMMES
-        if (data.programmes.length > 0) {
+        if (programmesList.length > 0) {
             const header = document.createElement("div");
             header.className = "search-section-header";
-            header.textContent = `🎓 Programmes (${data.programmes.length})`;
+            header.innerHTML = `<span>🎓</span> Academic Programmes (${programmesList.length})`;
             searchResults.appendChild(header);
 
-            data.programmes.forEach(prog => {
+            programmesList.forEach(prog => {
                 const item = document.createElement("div");
                 item.className = "search-item";
                 item.innerHTML = `<span>🎓</span> <div><div>${prog.name}</div><small style="color:#64748b; font-weight:normal;">${prog.departmentName || prog.departmentId} &bull; ${prog.buildingName || ''}</small></div>`;
                 item.addEventListener("click", () => {
+                    const progLat = Number(prog.lat);
+                    const progLng = Number(prog.lng);
+                    if (!isNaN(progLat) && !isNaN(progLng)) {
+                        map.setView([progLat, progLng], 18, { animate: true });
+                    }
                     showOfficeAndProgrammeDetails(prog.programmeId, prog.departmentId, prog.facultyId);
                 });
                 searchResults.appendChild(item);
@@ -2009,17 +2359,20 @@ async function performSearch(query) {
         }
 
         // 2. DEPARTMENTS & HOD OFFICES
-        if (data.departments.length > 0) {
+        if (departmentsList.length > 0) {
             const header = document.createElement("div");
             header.className = "search-section-header";
-            header.textContent = `🏛️ Departments & HOD Offices (${data.departments.length})`;
+            header.innerHTML = `<span>🏛️</span> Departments & HOD Offices (${departmentsList.length})`;
             searchResults.appendChild(header);
 
-            data.departments.forEach(dept => {
+            departmentsList.forEach(dept => {
                 const item = document.createElement("div");
                 item.className = "search-item";
-                item.innerHTML = `<span>🏛️</span> <div><div>Department of ${dept.name}</div><small style="color:#059669; font-weight:normal;">HOD: ${dept.hodName} (${dept.hodOfficeRoom})</small></div>`;
+                item.innerHTML = `<span>🏛️</span> <div><div>Department of ${dept.name}</div><small style="color:#059669; font-weight:normal;">HOD: ${dept.hodName} (${dept.hodOfficeRoom || 'Dept Office'})</small></div>`;
                 item.addEventListener("click", () => {
+                    const deptLat = Number(dept.lat || dept.latitude || 0.3476);
+                    const deptLng = Number(dept.lng || dept.longitude || 32.6316);
+                    map.setView([deptLat, deptLng], 18, { animate: true });
                     showOfficeAndProgrammeDetails(null, dept.departmentId, dept.facultyId);
                 });
                 searchResults.appendChild(item);
@@ -2027,59 +2380,66 @@ async function performSearch(query) {
         }
 
         // 3. STAFF & LEADERSHIP OFFICES
-        if (data.offices.length > 0) {
+        if (officesList.length > 0) {
             const header = document.createElement("div");
             header.className = "search-section-header";
-            header.textContent = `👤 Staff & Faculty Offices (${data.offices.length})`;
+            header.innerHTML = `<span>👤</span> Staff & Faculty Offices (${officesList.length})`;
             searchResults.appendChild(header);
 
-            data.offices.forEach(office => {
+            officesList.forEach(office => {
                 const item = document.createElement("div");
                 item.className = "search-item";
                 item.innerHTML = `<span>📍</span> <div><div>${office.title}</div><small style="color:#64748b; font-weight:normal;">${office.officerName} &bull; ${office.room}, ${office.floor}</small></div>`;
                 item.addEventListener("click", () => {
                     searchResults.innerHTML = "";
-                    map.setView([office.latitude, office.longitude], 18);
-                    selectDestination(office.title, office.latitude, office.longitude);
+                    const offLat = Number(office.latitude || office.lat);
+                    const offLng = Number(office.longitude || office.lng);
+                    map.setView([offLat, offLng], 18, { animate: true });
+                    selectDestination(office.title, offLat, offLng);
                 });
                 searchResults.appendChild(item);
             });
         }
 
-        // 4. FACULTIES
-        if (data.faculties.length > 0) {
+        // 4. FACULTIES & SCHOOLS
+        if (facultiesList.length > 0) {
             const header = document.createElement("div");
             header.className = "search-section-header";
-            header.textContent = `🏢 Faculties & Schools (${data.faculties.length})`;
+            header.innerHTML = `<span>🏢</span> Faculties & Schools (${facultiesList.length})`;
             searchResults.appendChild(header);
 
-            data.faculties.forEach(fac => {
+            facultiesList.forEach(fac => {
                 const item = document.createElement("div");
                 item.className = "search-item";
                 item.innerHTML = `<span>🏢</span> <div><div>${fac.name}</div><small style="color:#64748b; font-weight:normal;">Dean: ${fac.deanName} (${fac.deanOfficeRoom})</small></div>`;
                 item.addEventListener("click", () => {
-                    if (fac.lat && fac.lng) {
-                        map.setView([fac.lat, fac.lng], 18);
-                        selectDestination(fac.name + " (Dean Office)", fac.lat, fac.lng);
+                    searchResults.innerHTML = "";
+                    const facLat = Number(fac.lat || fac.latitude);
+                    const facLng = Number(fac.lng || fac.longitude);
+                    if (!isNaN(facLat) && !isNaN(facLng)) {
+                        map.setView([facLat, facLng], 18, { animate: true });
+                        selectDestination(fac.name + " (Dean Office)", facLat, facLng);
                     }
                 });
                 searchResults.appendChild(item);
             });
         }
 
-        // 5. BUILDINGS
-        if (data.buildings.length > 0) {
+        // 5. CAMPUS BUILDINGS
+        if (buildingsList.length > 0) {
             const header = document.createElement("div");
             header.className = "search-section-header";
-            header.textContent = `📍 Campus Buildings (${data.buildings.length})`;
+            header.innerHTML = `<span>📍</span> Campus Buildings (${buildingsList.length})`;
             searchResults.appendChild(header);
 
-            data.buildings.forEach(bldg => {
+            buildingsList.forEach(bldg => {
                 const item = document.createElement("div");
                 item.className = "search-item";
                 item.innerHTML = `<span>📍</span> <div><div>${bldg.name}</div><small style="color:#64748b; font-weight:normal;">Type: ${bldg.type}</small></div>`;
                 item.addEventListener("click", () => {
-                    map.setView([bldg.lat, bldg.lng], 18);
+                    const bldgLat = Number(bldg.lat || bldg.latitude);
+                    const bldgLng = Number(bldg.lng || bldg.longitude);
+                    map.setView([bldgLat, bldgLng], 18, { animate: true });
                     const match = buildings.find(b => b.buildingId === bldg.buildingId);
                     if (match && match.marker) match.marker.openPopup();
                     searchResults.innerHTML = "";
@@ -2093,24 +2453,39 @@ async function performSearch(query) {
     }
 }
 
-// Live search on input
+window.fitSearchResultsOnMap = function () {
+    if (searchResultLayer && searchResultLayer.getLayers().length > 0) {
+        map.fitBounds(searchResultLayer.getBounds(), { padding: [60, 60], maxZoom: 18, animate: true });
+    }
+};
+
+// Live search on input with debounce
 let searchDebounce = null;
 searchBox.addEventListener("input", function () {
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(() => {
-        performSearch(searchBox.value);
-    }, 200);
+        performSearch(searchBox.value, false);
+    }, 220);
 });
 
 searchButton.addEventListener("click", function () {
-    performSearch(searchBox.value);
+    performSearch(searchBox.value, true);
 });
 
 searchBox.addEventListener("keydown", function (e) {
     if (e.key === "Enter") {
-        performSearch(searchBox.value);
+        e.preventDefault();
+        performSearch(searchBox.value, true);
     }
 });
+
+// Prevent search container clicks from bubbling to map (which closes search)
+const searchContainerEl = document.querySelector(".search-container");
+if (searchContainerEl) {
+    searchContainerEl.addEventListener("click", function (e) {
+        e.stopPropagation();
+    });
+}
 
 // 10. MENU & SIDE PANEL
 const menuButton = document.createElement("button");
@@ -2281,16 +2656,16 @@ sidePanel.innerHTML = `
         </div>
     </div>
 `;
-sidePanel.style.position = "absolute";
+sidePanel.style.position = "fixed";
 sidePanel.style.top = "0";
 sidePanel.style.left = "-320px";
-sidePanel.style.width = "320px";
+sidePanel.style.width = "min(320px, 86vw)";
 sidePanel.style.height = "100%";
-sidePanel.style.zIndex = "3000";
-sidePanel.style.padding = "20px";
+sidePanel.style.zIndex = "5000";
+sidePanel.style.padding = "18px";
 sidePanel.style.boxSizing = "border-box";
-sidePanel.style.boxShadow = "2px 0 12px rgba(0,0,0,0.15)";
-sidePanel.style.transition = "left 0.4s ease";
+sidePanel.style.boxShadow = "2px 0 18px rgba(0,0,0,0.22)";
+sidePanel.style.transition = "left 0.32s cubic-bezier(0.16, 1, 0.3, 1)";
 sidePanel.style.overflowY = "auto";
 
 document.body.appendChild(sidePanel);
@@ -3951,6 +4326,11 @@ sideIcons.innerHTML = `
 
 document.body.appendChild(sideIcons);
 
+// Auto-collapse toolbar on phones so mobile screen stays spacious and well-organized
+if (window.innerWidth <= 768) {
+    sideIcons.classList.add("collapsed");
+}
+
 // Collapse / Expand Toolbar Toggle Handler
 const dockCollapseToggle = document.getElementById("dockCollapseToggle");
 if (dockCollapseToggle) {
@@ -4335,39 +4715,12 @@ async function forceFullscreenAndLandscape() {
 
 function checkOrientationAndUpdateUI() {
     if (!landscapeRotateBanner) return;
-    
-    if (!isPhoneOrMobile()) {
-        landscapeRotateBanner.style.display = "none";
-        return;
-    }
-
-    if (!isCurrentlyPortrait()) {
-        // Device is in landscape! Hide banner
-        landscapeRotateBanner.style.display = "none";
-    } else {
-        // Device is in portrait on phone
-        if (!bannerDismissed) {
-            landscapeRotateBanner.style.display = "block";
-        }
-    }
+    // Portrait phone layout is now fully responsive — keep rotate nag hidden
+    landscapeRotateBanner.style.display = "none";
 }
 
-// 1. Immediately attempt orientation lock on load
-requestLandscapeOrientation().then((success) => {
-    if (!success) {
-        checkOrientationAndUpdateUI();
-    }
-});
-
-// 2. Also attempt on first user touch/tap anywhere
-const firstTouchHandler = async () => {
-    await requestLandscapeOrientation();
-    checkOrientationAndUpdateUI();
-    window.removeEventListener("touchstart", firstTouchHandler);
-    window.removeEventListener("click", firstTouchHandler);
-};
-window.addEventListener("touchstart", firstTouchHandler, { passive: true });
-window.addEventListener("click", firstTouchHandler, { passive: true });
+// Keep map properly sized on mobile orientation/resize without forcing rotation
+checkOrientationAndUpdateUI();
 
 // 3. Listen to orientation changes & resize
 if (screen.orientation) {
