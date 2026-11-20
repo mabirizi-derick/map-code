@@ -142,17 +142,22 @@ if (topMapLayersBtn) {
 }
 
 // Notification helper (replaces window.alert for clean iframe compatibility)
-function showStatus(message, duration = 3500) {
+let statusFadeTimer = null;
+let statusHideTimer = null;
+
+function showStatus(message, duration = 2000) {
     const statusEl = document.getElementById("locationStatus");
     if (!statusEl) return;
+    if (statusFadeTimer) clearTimeout(statusFadeTimer);
+    if (statusHideTimer) clearTimeout(statusHideTimer);
     statusEl.textContent = message;
     statusEl.style.display = "block";
     statusEl.style.opacity = "1";
-    setTimeout(() => {
+    statusFadeTimer = setTimeout(() => {
         statusEl.style.opacity = "0";
-        setTimeout(() => {
+        statusHideTimer = setTimeout(() => {
             statusEl.style.display = "none";
-        }, 300);
+        }, 250);
     }, duration);
 }
 
@@ -1539,8 +1544,27 @@ function dijkstraCampusShortestPath(startId, endId) {
     };
 }
 
+let navBannerAutoHideTimer = null;
+
+function hideNavBannerCleanly() {
+    const navBanner = document.getElementById("activeNavigationBanner");
+    if (navBanner) navBanner.style.display = "none";
+    document.body.classList.remove("nav-active");
+}
+
+function scheduleNavBannerAutoHide(delayMs = 2000) {
+    if (navBannerAutoHideTimer) clearTimeout(navBannerAutoHideTimer);
+    navBannerAutoHideTimer = setTimeout(() => {
+        hideNavBannerCleanly();
+    }, delayMs);
+}
+
 // Clear all active navigation lines, markers, and banners
 function clearNavigation() {
+    if (navBannerAutoHideTimer) {
+        clearTimeout(navBannerAutoHideTimer);
+        navBannerAutoHideTimer = null;
+    }
     if (shortestRouteLine) {
         map.removeLayer(shortestRouteLine);
         shortestRouteLine = null;
@@ -1576,11 +1600,8 @@ function clearNavigation() {
     destination = null;
     lastRouteLat = null;
     lastRouteLng = null;
-    document.body.classList.remove("nav-active");
-
-    const navBanner = document.getElementById("activeNavigationBanner");
-    if (navBanner) navBanner.style.display = "none";
-    showStatus("Navigation cleared.");
+    hideNavBannerCleanly();
+    showStatus("Navigation cleared.", 2000);
 }
 window.clearNavigation = clearNavigation;
 
@@ -1738,6 +1759,7 @@ function processAndRenderDualRoutes(startLat, startLng, endLat, endLng, shortcut
 
 // Render both routes cleanly (NO glowing red markers at the end)
 function renderDualRoutes(shortestCoords, shortestDistance, normalCoords, normalDistance, destName, shortcutSummary) {
+    map.closePopup();
     // Remove previous route polylines & any old markers
     if (shortestRouteLine) map.removeLayer(shortestRouteLine);
     if (shortestCasingLine) map.removeLayer(shortestCasingLine);
@@ -1844,7 +1866,10 @@ function renderDualRoutes(shortestCoords, shortestDistance, normalCoords, normal
             if (navStepInstruction) {
                 navStepInstruction.textContent = `🔴 Shortest Path (Shortcuts): ${shortcutSummary}`;
             }
+            if (navBanner) navBanner.style.display = "flex";
+            document.body.classList.add("nav-active");
             map.fitBounds(shortestRouteLine.getBounds(), { padding: [60, 60], maxZoom: 18 });
+            scheduleNavBannerAutoHide(2000);
         };
 
         chipNormal.onclick = () => {
@@ -1857,7 +1882,10 @@ function renderDualRoutes(shortestCoords, shortestDistance, normalCoords, normal
             if (navStepInstruction) {
                 navStepInstruction.textContent = `🟢 Normal Route: Following Kyambogo official campus roads`;
             }
+            if (navBanner) navBanner.style.display = "flex";
+            document.body.classList.add("nav-active");
             map.fitBounds(normalRouteLine.getBounds(), { padding: [60, 60], maxZoom: 18 });
+            scheduleNavBannerAutoHide(2000);
         };
     }
 
@@ -1867,7 +1895,9 @@ function renderDualRoutes(shortestCoords, shortestDistance, normalCoords, normal
     const combinedBounds = shortestRouteLine.getBounds().extend(normalRouteLine.getBounds());
     map.fitBounds(combinedBounds, { padding: [65, 65], maxZoom: 18 });
 
-    showStatus(`🚶 🔴 Shortcuts (${shortestDistance}m) vs 🟢 Official Roads (${normalDistance}m)`);
+    // Auto-dismiss both the route banner and status popup 2s after routes are drawn so mobile screens stay clear
+    scheduleNavBannerAutoHide(2000);
+    showStatus(`🚶 🔴 Shortcuts (${shortestDistance}m) vs 🟢 Official Roads (${normalDistance}m)`, 2000);
 }
 
 // 7. LOCATION TRACKING
@@ -4435,7 +4465,7 @@ function updateOnlineStatus() {
 window.addEventListener('online', updateOnlineStatus);
 window.addEventListener('offline', updateOnlineStatus);
 
-// 3. BeforeInstallPrompt (Android & Chrome Web Install)
+// 3. BeforeInstallPrompt (Android & Chrome Web Install) & Standalone/Fullscreen Mode
 let deferredInstallPrompt = null;
 const installAppBtn = document.getElementById('installAppBtn');
 const pwaModal = document.getElementById('pwaModal');
@@ -4447,20 +4477,78 @@ const tabBtnPlaystore = document.getElementById('tabBtnPlaystore');
 const tabInstall = document.getElementById('tabInstall');
 const tabPlaystore = document.getElementById('tabPlaystore');
 const pwaCopyGuideBtn = document.getElementById('pwaCopyGuideBtn');
+const bottomInstallAppBtn = document.getElementById('bottomInstallAppBtn');
+const fullscreenToggleBtn = document.getElementById('fullscreenToggleBtn');
+
+function updateStandaloneAppMode() {
+    const isStandalone =
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        window.navigator.standalone === true;
+    document.body.classList.toggle('pwa-standalone', Boolean(isStandalone));
+    if (typeof map !== 'undefined' && map.invalidateSize) {
+        setTimeout(() => map.invalidateSize(), 200);
+    }
+}
+
+updateStandaloneAppMode();
+try {
+    window.matchMedia('(display-mode: standalone)').addEventListener('change', updateStandaloneAppMode);
+    window.matchMedia('(display-mode: fullscreen)').addEventListener('change', updateStandaloneAppMode);
+} catch (e) {}
+
+function updateFullscreenButtonLabel() {
+    if (!fullscreenToggleBtn) return;
+    const fsActive = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+    fullscreenToggleBtn.textContent = fsActive ? '✕ Exit Full' : '⛶ Full Screen';
+    fullscreenToggleBtn.classList.toggle('active', fsActive);
+    if (typeof map !== 'undefined' && map.invalidateSize) {
+        setTimeout(() => map.invalidateSize(), 220);
+    }
+}
+
+if (fullscreenToggleBtn) {
+    fullscreenToggleBtn.addEventListener('click', async () => {
+        const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+        try {
+            if (!fsEl) {
+                const docEl = document.documentElement;
+                const req = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
+                if (req) {
+                    await req.call(docEl, { navigationUI: 'hide' });
+                } else {
+                    openAppModal();
+                }
+            } else {
+                const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+                if (exit) await exit.call(document);
+            }
+        } catch (err) {
+            // Fallback to opening PWA install modal on iOS Safari where Fullscreen API is restricted
+            openAppModal();
+        }
+        updateFullscreenButtonLabel();
+    });
+    document.addEventListener('fullscreenchange', updateFullscreenButtonLabel);
+    document.addEventListener('webkitfullscreenchange', updateFullscreenButtonLabel);
+}
 
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
     if (androidInstallHint) {
-        androidInstallHint.innerText = 'Click below to immediately install the Kyambogo app on your home screen.';
+        androidInstallHint.innerText = 'Tap below to immediately install Kyambogo Map full-screen on your home screen (no browser bar).';
+    }
+    if (bottomInstallAppBtn) {
+        const textSpan = bottomInstallAppBtn.querySelector('.btn-text');
+        if (textSpan) textSpan.innerText = 'Install Fullscreen App';
     }
 });
 
-const bottomInstallAppBtn = document.getElementById('bottomInstallAppBtn');
-
 window.addEventListener('appinstalled', () => {
     deferredInstallPrompt = null;
-    showStatus('Kyambogo Digital Campus Map installed successfully!');
+    updateStandaloneAppMode();
+    showStatus('Kyambogo Digital Campus Map installed! Open from Home Screen for full-screen mode.');
     if (pwaModal) pwaModal.style.display = 'none';
     if (installAppBtn) installAppBtn.innerText = '📲 App Installed';
     if (bottomInstallAppBtn) {
@@ -4479,7 +4567,20 @@ if (installAppBtn) {
 }
 
 if (bottomInstallAppBtn) {
-    bottomInstallAppBtn.addEventListener('click', openAppModal);
+    bottomInstallAppBtn.addEventListener('click', async () => {
+        if (deferredInstallPrompt) {
+            try {
+                deferredInstallPrompt.prompt();
+                const { outcome } = await deferredInstallPrompt.userChoice;
+                if (outcome === 'accepted') {
+                    showStatus('Installing full-screen Kyambogo Campus Map...');
+                }
+                deferredInstallPrompt = null;
+                return;
+            } catch (e) {}
+        }
+        openAppModal();
+    });
 }
 
 if (pwaModalClose && pwaModal) {

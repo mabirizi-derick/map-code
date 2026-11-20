@@ -1,30 +1,30 @@
-body {
+html, body {
     font-family: Arial, sans-serif;
     margin: 0;
     padding: 0;
     width: 100%;
     height: 100%;
+    height: 100dvh;
     overflow: hidden;
+    overscroll-behavior: none;
     background: #f4f6f8;
-}
-
-html, body {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
+    -webkit-tap-highlight-color: transparent;
 }
 
 #map {
-    position: absolute;
-    top: 0;
-    left: 0;
+    position: fixed;
+    inset: 0;
     width: 100%;
-    height: 100vh;
+    height: 100%;
     height: 100dvh;
     min-height: 100%;
     z-index: 1;
     background: #e2e8f0;
+}
+
+body.pwa-standalone #bottomInstallAppBtn,
+body.pwa-standalone #fullscreenToggleBtn {
+    display: none !important;
 }
 
 .red-marker {
@@ -2644,11 +2644,22 @@ html, body {
     #topMapLayersBtn {
         display: none !important;
     }
-    #shareLocation, #locationButton, #stopLocationButton {
-        padding: 0 10px !important;
+    #shareLocation, #locationButton, #stopLocationButton, #fullscreenToggleBtn {
+        padding: 0 11px !important;
         font-size: 11.5px !important;
-        height: 32px !important;
+        height: 30px !important;
         flex-shrink: 0;
+        border-radius: 9999px !important;
+        background: rgba(255, 255, 255, 0.96) !important;
+        color: #1e293b !important;
+        border: 1px solid #dadce0 !important;
+        box-shadow: 0 1px 3px rgba(60, 64, 67, 0.2) !important;
+        font-weight: 600 !important;
+    }
+    #fullscreenToggleBtn.active {
+        background: #1a73e8 !important;
+        color: #ffffff !important;
+        border-color: #1a73e8 !important;
     }
     #locationStatus {
         top: auto;
@@ -6247,27 +6258,34 @@ div#liveEventsWallpaperBar > div.live-wallpaper-header,
 
 @media (max-width: 768px) {
     .leaflet-bottom.leaflet-right {
-        bottom: calc(max(10px, env(safe-area-inset-bottom)) + 102px);
+        bottom: calc(max(10px, env(safe-area-inset-bottom)) + 108px);
         right: 8px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
     }
     .leaflet-control-zoom a {
-        width: 32px !important;
-        height: 32px !important;
-        line-height: 32px !important;
-        font-size: 16px !important;
+        width: 34px !important;
+        height: 34px !important;
+        line-height: 34px !important;
+        font-size: 17px !important;
     }
     .leaflet-control-attribution {
-        font-size: 8px !important;
+        font-size: 7.5px !important;
         padding: 1px 5px !important;
-        max-width: 140px;
+        max-width: 115px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        opacity: 0.78;
+        opacity: 0.68;
+        pointer-events: none;
+        margin: 0 !important;
+        border-radius: 6px !important;
     }
     #sideIcons, .campus-map-dock {
         left: 8px !important;
-        top: calc(max(8px, env(safe-area-inset-top)) + 124px) !important;
+        top: calc(max(8px, env(safe-area-inset-top)) + 118px) !important;
         max-height: calc(100dvh - 245px);
         overflow-y: auto;
         scrollbar-width: none;

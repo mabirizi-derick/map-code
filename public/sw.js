@@ -1,5 +1,5 @@
 // Kyambogo Digital Campus Map - Service Worker (Offline & PWA Caching)
-const CACHE_NAME = 'kyambogo-campus-map-v3';
+const CACHE_NAME = 'kyambogo-campus-map-v4';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
