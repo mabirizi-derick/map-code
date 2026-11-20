@@ -523,12 +523,12 @@ function getBuildingImageUrl(building) {
     }
 
     // Engineering & Technology Complex (Civil, Mechanical, Electrical)
-    if (bldgId.includes('ENGINEERING') || bldgId.includes('CIVIL') || bldgId.includes('MECH') || bldgId.includes('ELECTRICAL') || name.includes('ENGINEERING') || name.includes('MECHANICAL') || name.includes('CIVIL')) {
+    if (bldgId.includes('ENGINEERING') || bldgId.includes('CIVIL') || bldgId.includes('MECH') || bldgId.includes('ELECTRICAL') || bldgId.includes('MOTOR') || name.includes('ENGINEERING') || name.includes('MECHANICAL') || name.includes('CIVIL') || name.includes('ELECTRICAL')) {
         return KYAMBOGO_CAMPUS_IMAGES.engineering;
     }
 
     // Science Faculty & Laboratories
-    if (bldgId.includes('SCIENCE') || bldgId.includes('LAB') || type === 'laboratory' || name.includes('SCIENCE') || name.includes('LABORATORY')) {
+    if (bldgId.includes('SCIENCE') || bldgId.includes('LAB') || type === 'laboratory' || name.includes('SCIENCE') || name.includes('LABORATORY') || name.includes('WORKSHOP')) {
         return KYAMBOGO_CAMPUS_IMAGES.science;
     }
 
@@ -903,8 +903,10 @@ function matchesCategory(item, category) {
                    id.includes("dept") || id.includes("office");
 
         case "schools":
-            // Schools: SCIS, SOME, SBE, SAID, SOVS
-            return name.includes("school of") || id.includes("school") ||
+            // Schools: SCIS, SOME, SBE, SAID, SOVS, Graduate School
+            return name.includes("school of") || name.includes("graduate school") ||
+                   name.includes("college") || name.includes("secondary school") ||
+                   id.includes("school") || id.includes("college") ||
                    id.includes("scis") || id.includes("some") || 
                    id.includes("sbe") || id.includes("said") || id.includes("sovs") ||
                    name.includes("sbe") || name.includes("some") || name.includes("scis") ||

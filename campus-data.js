@@ -450,6 +450,483 @@ export const buildings = [
     "longitude": 32.628263,
     "description": "Central Lecture Block (CLB) — Premier 4-storey central academic lecture theatre complex, tiered auditoriums, examination halls, and seminar facilities located between Catholic Chaplaincy and Technical Teacher Block.",
     "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "ELECTRICAL-LECTURE-ROOMS",
+    "name": "Electrical Lecture Rooms",
+    "type": "academic",
+    "latitude": 0.347243,
+    "longitude": 32.627527,
+    "description": "Electrical & Electronics Engineering Lecture Rooms (Main West Block) — Undergraduate and diploma engineering lecture rooms south of the Mechanical Block",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "ELECTRICAL-LECTURE-ROOMS-EAST",
+    "name": "Electrical Lecture Rooms (East Block)",
+    "type": "academic",
+    "latitude": 0.347099,
+    "longitude": 32.627937,
+    "description": "Electrical & Electronics Engineering Lecture Rooms (East Wing) — Lecture rooms adjacent to Mechanical Lab and SDA Church",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "CIVIL-LABORATORY",
+    "name": "Civil Engineering Laboratory",
+    "type": "laboratory",
+    "latitude": 0.348063,
+    "longitude": 32.628957,
+    "description": "Civil & Building Engineering Laboratory — Materials testing, soil mechanics, concrete & hydraulics laboratory",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "CIVIL-BUILDING-DEPT",
+    "name": "Civil & Building Engineering Department",
+    "type": "academic",
+    "latitude": 0.348964,
+    "longitude": 32.628255,
+    "description": "Department of Civil & Building Engineering administrative block, staff offices, and studio rooms",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "MECHANICAL-LAB",
+    "name": "Mechanical Engineering Laboratory",
+    "type": "laboratory",
+    "latitude": 0.347264,
+    "longitude": 32.628382,
+    "description": "Mechanical Engineering Laboratory — Thermodynamics, fluid mechanics, and metrology labs",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "MECHANICAL-MOTOR-SHOP",
+    "name": "Mechanical Motor Shop",
+    "type": "laboratory",
+    "latitude": 0.347899,
+    "longitude": 32.627885,
+    "description": "Mechanical & Automotive Engineering Motor Shop and heavy machinery practice bay",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "LANDS-COMPUTER-LAB",
+    "name": "Engineering & Lands Computer Lab",
+    "type": "laboratory",
+    "latitude": 0.349026,
+    "longitude": 32.62863,
+    "description": "GIS, AutoCAD, Surveying, and Engineering Computing Laboratory beside Lands Canteen",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "DEPT-LANDS-ARCH-STUDIES",
+    "name": "Department of Lands & Architectural Studies",
+    "type": "academic",
+    "latitude": 0.349261,
+    "longitude": 32.628281,
+    "description": "Department of Lands & Architectural Studies — Surveying, Architecture studios, and GIS classrooms",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "ART-LAB-SAID",
+    "name": "Art Lab (School of Art & Industrial Design)",
+    "type": "laboratory",
+    "latitude": 0.347593,
+    "longitude": 32.634106,
+    "description": "Fine Art, Ceramics, Sculpture & Industrial Design practical workshop lab east of Block 29",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "GRADUATE-SCHOOL",
+    "name": "Graduate School",
+    "type": "academic",
+    "latitude": 0.348245,
+    "longitude": 32.629838,
+    "description": "Kyambogo University Directorate of Research & Graduate Training — Masters and PhD coordination and graduate seminar rooms",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "SOBE-ENGINEERING-COMPLEX",
+    "name": "North Engineering & Built Environment Complex",
+    "type": "academic",
+    "latitude": 0.355976,
+    "longitude": 32.625151,
+    "description": "New Engineering & School of Built Environment academic complex north of FSNR",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "FSNR-SPECIAL-NEEDS-MAIN",
+    "name": "Faculty of Special Needs & Rehabilitation (Main Academic Wing)",
+    "type": "academic",
+    "latitude": 0.354068,
+    "longitude": 32.625469,
+    "description": "Primary lecture and resource complex for the Faculty of Special Needs & Rehabilitation near North Hall",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "FSNR-WORKSHOP",
+    "name": "Special Needs & Technical Workshop",
+    "type": "laboratory",
+    "latitude": 0.353556,
+    "longitude": 32.625808,
+    "description": "Assistive technology, braille production, and rehabilitation training workshop at North Campus",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "KYU-NUTRITION-LEARNING-CENTRE",
+    "name": "KyU Nutrition Learning Centre",
+    "type": "laboratory",
+    "latitude": 0.345264,
+    "longitude": 32.633037,
+    "description": "Kyambogo University Human Nutrition & Dietetics research and community learning centre",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "KYU-MEDICAL-CENTRE-BANDA",
+    "name": "KyU Medical Centre (Banda Wing)",
+    "type": "medical",
+    "latitude": 0.345222,
+    "longitude": 32.63278,
+    "description": "Kyambogo University Medical Centre East/Banda health facility annex adjacent to the Nutrition Learning Centre",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "NCHE-OFFICES",
+    "name": "NCHE Offices (Kyambogo)",
+    "type": "administration",
+    "latitude": 0.348788,
+    "longitude": 32.631693,
+    "description": "National Council for Higher Education (NCHE) annex building along Cavers Crescent",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "UNEB-KYAMBOGO-OFFICE",
+    "name": "UNEB Kyambogo Office",
+    "type": "administration",
+    "latitude": 0.348649,
+    "longitude": 32.624967,
+    "description": "Uganda National Examinations Board (UNEB) Kyambogo Office along Kyambogo Road near West End Library",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "NCDC-KYAMBOGO",
+    "name": "National Curriculum Development Centre (NCDC)",
+    "type": "administration",
+    "latitude": 0.348434,
+    "longitude": 32.634439,
+    "description": "National Curriculum Development Centre (NCDC) headquarters bordering Kyambogo East End",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "UVTAB-KYAMBOGO",
+    "name": "UVTAB (Uganda Vocational & Technical Assessment Board)",
+    "type": "administration",
+    "latitude": 0.35701,
+    "longitude": 32.623982,
+    "description": "Uganda Vocational & Technical Assessment Board offices north of SOBE & North Gate",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "UNIVERSITY-ESTATES-OFFICES",
+    "name": "University Real Estate Offices (Estates)",
+    "type": "service",
+    "latitude": 0.347427,
+    "longitude": 32.63007,
+    "description": "Kyambogo University Estates & Works Real Estate Offices south of Ecobank",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "CENTRAL-STORE",
+    "name": "Central Store (Engineering & Campus Works)",
+    "type": "service",
+    "latitude": 0.348618,
+    "longitude": 32.62736,
+    "description": "Central equipment, maintenance, and engineering materials store north of Mechanical Block",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "UNIVERSITY-STORES",
+    "name": "University Stores",
+    "type": "service",
+    "latitude": 0.347733,
+    "longitude": 32.629559,
+    "description": "Central University Procurement & General Supplies Stores near Nanziri Upper",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "POSTA-UGANDA-KYAMBOGO",
+    "name": "Posta Uganda (Kyambogo Post Office)",
+    "type": "service",
+    "latitude": 0.347592,
+    "longitude": 32.631827,
+    "description": "Posta Uganda postal, courier, and P.O. Box services beside Senate & SCIS",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "STATIONERY-PHOTOCOPY-CENTRE",
+    "name": "Stationery & Photocopying Centre",
+    "type": "service",
+    "latitude": 0.347099,
+    "longitude": 32.631148,
+    "description": "Student printing, binding, typesetting, and photocopying centre near Fruit Centre & NPT",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "NPT-PARKING",
+    "name": "NPT Parking Area",
+    "type": "service",
+    "latitude": 0.346385,
+    "longitude": 32.631328,
+    "description": "Official campus vehicle parking lot south of NPT Building",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "SECURITY-OFFICE-MAIN",
+    "name": "Campus Security Office (Central Spine)",
+    "type": "police",
+    "latitude": 0.350605,
+    "longitude": 32.627818,
+    "description": "Central Campus Security guard post and patrol coordination office near West End Dining Hall",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "NORTH-GATE-HOUSE",
+    "name": "Gate House (North Hall / Kulubya Gate)",
+    "type": "gate",
+    "latitude": 0.352841,
+    "longitude": 32.625716,
+    "description": "Kyambogo University North Gate security checkpoint leading to North Hall and SOBE",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "SOUTH-WATCHMAN-POST",
+    "name": "Watchman Post (RAC / South Gate)",
+    "type": "gate",
+    "latitude": 0.345505,
+    "longitude": 32.632423,
+    "description": "South Campus Gate & Watchman Security Post near RAC Building and Banda access road",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "CRANE-BANK-KYAMBOGO",
+    "name": "Crane Bank Building (Cavers Crescent)",
+    "type": "bank",
+    "latitude": 0.347552,
+    "longitude": 32.631558,
+    "description": "Commercial bank & ATM service building adjacent to Stanbic Bank on Cavers Crescent",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "KENNEDY-NANZIRI-HALL",
+    "name": "Nanziri Hall (Lower) Kennedy Block",
+    "type": "hall",
+    "latitude": 0.346222,
+    "longitude": 32.63049,
+    "description": "Student residence block at Nanziri Lower (Kennedy Wing) beside Mandela Hall",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "NORTH-HALL-RESIDENCE",
+    "name": "North Hall Residence Block",
+    "type": "hall",
+    "latitude": 0.354341,
+    "longitude": 32.625851,
+    "description": "Main residential wing of North Hall adjacent to North Hall Dining Hall (Kahive)",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "KULUBYA-GUILD-CANTEEN",
+    "name": "Kulubya Guild Canteen",
+    "type": "canteen",
+    "latitude": 0.352226,
+    "longitude": 32.625996,
+    "description": "Kulubya Hall student guild canteen serving meals, snacks, and refreshments",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "CANTEEN-AT-NANZIRI",
+    "name": "Canteen @ Nanziri",
+    "type": "canteen",
+    "latitude": 0.347728,
+    "longitude": 32.630317,
+    "description": "Student canteen and fast food point north of Nanziri Hall near Ecobank",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "LANDS-CANTEEN",
+    "name": "Lands Canteen",
+    "type": "canteen",
+    "latitude": 0.349139,
+    "longitude": 32.628674,
+    "description": "Engineering & Lands Canteen serving meals and tea near Computer Lab and Lands Lecture Rooms",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "RAC-GUILD-CANTEEN",
+    "name": "Guild Canteen (RAC / NPT Area)",
+    "type": "canteen",
+    "latitude": 0.346374,
+    "longitude": 32.631581,
+    "description": "Student guild canteen located beside RAC Building and NPT Parking",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "MANDELA-CANTEEN-1",
+    "name": "Mandela Canteen 1",
+    "type": "canteen",
+    "latitude": 0.346015,
+    "longitude": 32.63081,
+    "description": "Canteen 1 serving Mandela Hall and Blue Nile residential blocks",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "MANDELA-CANTEEN-2",
+    "name": "Mandela Canteen 2",
+    "type": "canteen",
+    "latitude": 0.34596,
+    "longitude": 32.630922,
+    "description": "Mandela Canteen 2 adjacent to East End Dining Hall",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "MOSQUE-CANTEEN",
+    "name": "Mosque Canteen",
+    "type": "canteen",
+    "latitude": 0.352566,
+    "longitude": 32.62632,
+    "description": "Campus canteen and refreshment kiosk right beside Kyambogo University Mosque",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "VOLLEYBALL-COURT-EAST",
+    "name": "East End Volleyball Court",
+    "type": "sports",
+    "latitude": 0.346288,
+    "longitude": 32.63252,
+    "description": "Outdoor campus volleyball court east of RAC Building and south of East End Pitch",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "MIN-FOREST",
+    "name": "Min Forest (Campus Green Reserve)",
+    "type": "landmark",
+    "latitude": 0.346228,
+    "longitude": 32.627333,
+    "description": "Natural green tree reserve and shaded study grove south of Electrical Lecture Rooms",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "CAMPUS-NOTICE-BOARD",
+    "name": "Campus Notice Board Pavilion",
+    "type": "landmark",
+    "latitude": 0.346996,
+    "longitude": 32.630279,
+    "description": "Central student information and university notice board pavilion beside Nanziri Hall",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "KYAMBOGO-NURSERY-KINDERGARTEN",
+    "name": "Kyambogo Nursery & Kindergarten",
+    "type": "academic",
+    "latitude": 0.347096,
+    "longitude": 32.629319,
+    "description": "Kyambogo University Early Childhood Demonstration Nursery & Kindergarten east of SDA Church",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "BURUA-STAFF-BLOCK",
+    "name": "Burua Block (East End Staff Quarters)",
+    "type": "hall",
+    "latitude": 0.345862,
+    "longitude": 32.631545,
+    "description": "Burua university staff housing block south of East End Dining Hall",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "KABAKAS-PALACE-KYAMBOGO",
+    "name": "Kabaka's Palace (Kyambogo Hill)",
+    "type": "landmark",
+    "latitude": 0.354891,
+    "longitude": 32.630951,
+    "description": "Historic Buganda Kingdom Kabaka's Palace on Kyambogo Hill overlooking the university campus",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "DESERT-TREE-HOSTEL",
+    "name": "Desert Tree Hostel",
+    "type": "hall",
+    "latitude": 0.345064,
+    "longitude": 32.635095,
+    "description": "Off-campus student hostel on Banda side near Faculty of Agriculture",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "DECITY-COURTS-HOSTEL",
+    "name": "Decity Courts Hostel",
+    "type": "hall",
+    "latitude": 0.344728,
+    "longitude": 32.63528,
+    "description": "Student hostel accommodation at Banda near East End Gate",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "SPORTS-PRO-HOSTEL",
+    "name": "Sports Pro Hostel",
+    "type": "hall",
+    "latitude": 0.345179,
+    "longitude": 32.63597,
+    "description": "Student residential hostel in Banda close to Faculty of Agriculture",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "CARILTON-HOSTEL",
+    "name": "Carilton Hostel",
+    "type": "hall",
+    "latitude": 0.350621,
+    "longitude": 32.636875,
+    "description": "Student hostel along Banda side east of Main Administration Block",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "JUPITER-HOSTEL",
+    "name": "Jupiter Hostel",
+    "type": "hall",
+    "latitude": 0.350705,
+    "longitude": 32.637396,
+    "description": "Student hostel east of Kyambogo College Administration",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "BANDA-COMMUNITY-CLINIC",
+    "name": "Banda Community Clinic (HC III)",
+    "type": "medical",
+    "latitude": 0.344175,
+    "longitude": 32.635382,
+    "description": "Banda Community Health Centre III adjacent to Kyambogo East / Banda border",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "ST-PAUL-BANDA-CATHOLIC",
+    "name": "St. Paul Banda Catholic Church",
+    "type": "worship",
+    "latitude": 0.350487,
+    "longitude": 32.635031,
+    "description": "St. Paul Catholic Parish Church east of Kyambogo College",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "NABISUNSA-GIRLS-SCHOOL",
+    "name": "Nabisunsa Girls Secondary School",
+    "type": "academic",
+    "latitude": 0.344497,
+    "longitude": 32.633749,
+    "description": "Nabisunsa Girls Secondary School campus bordering southern Kyambogo University",
+    "coordinateStatus": "verified"
+  },
+  {
+    "buildingId": "PUBLIC-HEALTH-NURSING-COLLEGE",
+    "name": "Uganda National Public Health Nursing College",
+    "type": "academic",
+    "latitude": 0.357312,
+    "longitude": 32.624984,
+    "description": "Public Health Nursing College north of SOBE & Engineering Complex",
+    "coordinateStatus": "verified"
   }
 ];
 
@@ -479,7 +956,11 @@ export function getBuildingById(id) {
     'ACADEMIC-REGISTRAR': 'ADMISSIONS-BLOCK',
     'BUILDING-CLB': 'CENTRAL-LECTURE-BLOCK',
     'CLB': 'CENTRAL-LECTURE-BLOCK',
-    'CLB-BLOCK': 'CENTRAL-LECTURE-BLOCK'
+    'CLB-BLOCK': 'CENTRAL-LECTURE-BLOCK',
+    'NCHE': 'NCHE-OFFICES',
+    'NCDC': 'NCDC-KYAMBOGO',
+    'UNEB': 'UNEB-KYAMBOGO-OFFICE',
+    'UVTAB': 'UVTAB-KYAMBOGO'
   };
 
   const targetId = aliasMap[id] || id;

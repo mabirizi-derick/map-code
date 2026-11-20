@@ -190,8 +190,18 @@ if (mongoUri) {
         mongoDb = client.db(dbName);
         console.log(`Connected to MongoDB Atlas: database "${dbName}"`);
 
-        // Preload analytics count and recent chats from MongoDB
+        // Preload analytics count, sync missing campus buildings, and load recent chats from MongoDB
         try {
+          const existingIds = new Set(
+            (await mongoDb.collection("buildings").find({}, { projection: { buildingId: 1 } }).toArray()).map(b => b.buildingId)
+          );
+          const missingBuildings = buildings.filter(b => !existingIds.has(b.buildingId));
+          if (missingBuildings.length > 0) {
+            for (const b of missingBuildings) {
+              await mongoDb.collection("buildings").updateOne({ buildingId: b.buildingId }, { $set: b }, { upsert: true });
+            }
+            console.log(`Synced ${missingBuildings.length} newly added campus buildings into MongoDB Atlas`);
+          }
           const vCount = await mongoDb.collection("visitors").countDocuments();
           if (vCount > 0) {
             console.log(`Preloaded ${vCount} visitor records from MongoDB Atlas`);
@@ -2323,7 +2333,9 @@ app.get(["/api/buildings", "/buildings"], async (req, res) => {
   try {
     const dbBuildings = await safeMongoQuery(mongoDb ? mongoDb.collection("buildings").find().toArray() : null, null);
     if (Array.isArray(dbBuildings) && dbBuildings.length > 0) {
-      return res.json(dbBuildings);
+      const dbIds = new Set(dbBuildings.map(b => b.buildingId));
+      const missingLocal = buildings.filter(b => !dbIds.has(b.buildingId));
+      return res.json([...dbBuildings, ...missingLocal]);
     }
   } catch (e) {
     console.warn("MongoDB buildings fallback:", e.message);
@@ -3206,10 +3218,23 @@ const AI_SYNONYM_MAP = {
   happening: ['event', 'events', 'notice', 'upcoming'],
   music: ['performing arts', 'mdd', 'music'],
   drama: ['performing arts', 'mdd'],
-  art: ['art', 'industrial design', 'block 29'],
+  art: ['art', 'industrial design', 'block 29', 'art lab'],
   business: ['management', 'entrepreneurship', 'npt', 'some'],
   computing: ['scis', 'iicd', 'computer', 'bitc'],
-  computer: ['scis', 'iicd', 'computer', 'bitc']
+  computer: ['scis', 'iicd', 'computer', 'bitc', 'computer lab'],
+  electrical: ['electrical lecture rooms', 'electrical engineering', 'engineering'],
+  civil: ['civil lecture rooms', 'civil engineering', 'civil laboratory'],
+  mechanical: ['mechanical', 'motor shop', 'mechanical lab'],
+  lecture: ['lecture rooms', 'lecture block', 'ctf', 'clb'],
+  posta: ['posta', 'post office'],
+  gate: ['gate house', 'watchman post', 'gate'],
+  volleyball: ['volleyball', 'court', 'sports'],
+  parking: ['parking', 'npt parking'],
+  photocopy: ['stationery', 'photocopying', 'printing'],
+  stationery: ['stationery', 'photocopying', 'printing'],
+  printing: ['stationery', 'photocopying', 'printing'],
+  estate: ['real estate', 'estates'],
+  estates: ['real estate', 'estates']
 };
 
 function tokenizeCampusQuery(text) {
