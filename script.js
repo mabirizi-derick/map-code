@@ -5141,16 +5141,24 @@ document.querySelectorAll(".ai-chip-prompt").forEach(chip => {
     });
 });
 
+function escapeAiHtml(str) {
+    return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+
 async function submitCampusAiQuery(question) {
     const q = (question || (campusAiInput ? campusAiInput.value : "")).trim();
     if (!q || !campusAiMessages) return;
 
     if (campusAiInput) campusAiInput.value = "";
 
-    // Append user message
+    // Append user message safely
     const userMsg = document.createElement("div");
     userMsg.className = "ai-msg ai-user-msg";
-    userMsg.innerHTML = `<div class="ai-msg-bubble">${q}</div>`;
+    userMsg.innerHTML = `<div class="ai-msg-bubble">${escapeAiHtml(q)}</div>`;
     campusAiMessages.appendChild(userMsg);
 
     // Append bot loading bubble
@@ -5208,99 +5216,132 @@ async function submitCampusAiQuery(question) {
             answerText = data.data.answer || answerText;
             building = data.data.building;
             actionType = data.data.actionType || "info";
-            followUpSuggestions = data.data.followUpSuggestions || [];
+            followUpSuggestions = Array.isArray(data.data.followUpSuggestions) ? data.data.followUpSuggestions : [];
         }
 
-        // Format markdown bolding into HTML
-        let formattedAnswer = answerText
+        // Format markdown bolding/italics safely into HTML
+        let formattedAnswer = escapeAiHtml(answerText)
             .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-            .replace(/\*(.*?)\*/g, '<i>$1</i>');
+            .replace(/\*(.*?)\*/g, '<i>$1</i>')
+            .replace(/\n/g, '<br>');
+
+        const bubble = document.createElement("div");
+        bubble.className = "ai-msg-bubble";
 
         // Location badge if near a known building
-        let locationBadgeHtml = "";
         if (userLocation && userLocation.nearestBuilding && (actionType === "current_location" || isAskingLocation)) {
-            locationBadgeHtml = `
-                <div class="ai-location-badge">
-                    <span>📍 GPS Active</span> &bull; 
-                    <span>Near ${userLocation.nearestBuilding.name} (~${userLocation.nearestBuilding.distanceMeters}m)</span>
-                </div>
-            `;
+            const locBadge = document.createElement("div");
+            locBadge.className = "ai-location-badge";
+            locBadge.innerHTML = `<span>📍 GPS Active</span> &bull; <span>Near ${escapeAiHtml(userLocation.nearestBuilding.name)} (~${userLocation.nearestBuilding.distanceMeters}m)</span>`;
+            bubble.appendChild(locBadge);
         }
 
-        // Build interactive action buttons
-        let actionsHtml = "";
-        const actionButtons = [];
+        const p = document.createElement("p");
+        p.style.margin = "0";
+        p.style.lineHeight = "1.45";
+        p.innerHTML = formattedAnswer;
+        bubble.appendChild(p);
+
+        // Build interactive action buttons with direct module-scope handlers
+        const actionContainer = document.createElement("div");
+        actionContainer.className = "ai-bot-card-action";
 
         if (actionType === "request_location" || (isAskingLocation && !userLocation)) {
-            actionButtons.push(`
-                <button type="button" class="ai-action-btn-detect" onclick="window.requestUserLocationForAi && window.requestUserLocationForAi()">
-                    📍 Detect My Location & Surroundings
-                </button>
-            `);
+            const detectBtn = document.createElement("button");
+            detectBtn.type = "button";
+            detectBtn.className = "ai-action-btn-detect";
+            detectBtn.textContent = "📍 Detect My Location & Surroundings";
+            detectBtn.addEventListener("click", () => window.requestUserLocationForAi && window.requestUserLocationForAi());
+            actionContainer.appendChild(detectBtn);
         }
 
         if (building && typeof building.latitude === "number") {
-            const safeName = (building.name || "Campus Destination").replace(/'/g, "\\'");
-            actionButtons.push(`
-                <button type="button" class="ai-action-btn-walk" onclick="window.closeCampusAiModal(); window.selectDestination('${safeName}', ${building.latitude}, ${building.longitude});">
-                    🧭 Walk Here
-                </button>
-            `);
-            actionButtons.push(`
-                <button type="button" class="ai-action-btn-map" onclick="window.closeCampusAiModal(); map.setView([${building.latitude}, ${building.longitude}], 18); const m = (window.buildings || []).find(x => x.buildingId === '${building.buildingId}'); if (m && m.marker) m.marker.openPopup();">
-                    📍 Show on Map
-                </button>
-            `);
-            actionButtons.push(`
-                <button type="button" class="ai-action-btn-info" onclick="window.closeCampusAiModal(); const b = (buildings || defaultBuildings).find(x => x.buildingId === '${building.buildingId}'); if (b) showBuildingDetail(b);">
-                    🏢 Building Info
-                </button>
-            `);
+            const safeName = building.name || "Campus Destination";
+
+            const walkBtn = document.createElement("button");
+            walkBtn.type = "button";
+            walkBtn.className = "ai-action-btn-walk";
+            walkBtn.textContent = "🧭 Walk Here";
+            walkBtn.addEventListener("click", () => {
+                window.closeCampusAiModal();
+                window.selectDestination(safeName, building.latitude, building.longitude);
+            });
+            actionContainer.appendChild(walkBtn);
+
+            const mapBtn = document.createElement("button");
+            mapBtn.type = "button";
+            mapBtn.className = "ai-action-btn-map";
+            mapBtn.textContent = "📍 Show on Map";
+            mapBtn.addEventListener("click", () => {
+                window.closeCampusAiModal();
+                map.setView([building.latitude, building.longitude], 18);
+                const m = (window.buildings || buildings || []).find(x => x.buildingId === building.buildingId);
+                if (m && m.marker) {
+                    if (!map.hasLayer(m.marker)) map.addLayer(m.marker);
+                    m.marker.openPopup();
+                }
+            });
+            actionContainer.appendChild(mapBtn);
+
+            const infoBtn = document.createElement("button");
+            infoBtn.type = "button";
+            infoBtn.className = "ai-action-btn-info";
+            infoBtn.textContent = "🏢 Building Info";
+            infoBtn.addEventListener("click", () => {
+                window.closeCampusAiModal();
+                const b = (buildings || defaultBuildings).find(x => x.buildingId === building.buildingId);
+                if (b) showBuildingDetail(b);
+            });
+            actionContainer.appendChild(infoBtn);
         }
 
         if (actionType === "current_location" && userMarker) {
-            actionButtons.push(`
-                <button type="button" class="ai-action-btn-map" onclick="window.closeCampusAiModal(); map.setView(userMarker.getLatLng(), 18); userMarker.openPopup();">
-                    📍 Pinpoint Me on Map
-                </button>
-            `);
+            const pinMeBtn = document.createElement("button");
+            pinMeBtn.type = "button";
+            pinMeBtn.className = "ai-action-btn-map";
+            pinMeBtn.textContent = "📍 Pinpoint Me on Map";
+            pinMeBtn.addEventListener("click", () => {
+                window.closeCampusAiModal();
+                map.setView(userMarker.getLatLng(), 18);
+                userMarker.openPopup();
+            });
+            actionContainer.appendChild(pinMeBtn);
         }
 
-        // Voice Read-Aloud Button
-        const cleanSpeechText = answerText.replace(/['"\\]/g, ' ').substring(0, 300);
-        actionButtons.push(`
-            <button type="button" class="ai-action-btn-speak" title="Listen to answer" onclick="window.speakCampusAiText('${cleanSpeechText}')">
-                🔊 Listen
-            </button>
-        `);
+        const speakBtn = document.createElement("button");
+        speakBtn.type = "button";
+        speakBtn.className = "ai-action-btn-speak";
+        speakBtn.title = "Listen to answer";
+        speakBtn.textContent = "🔊 Listen";
+        speakBtn.addEventListener("click", () => window.speakCampusAiText(answerText.substring(0, 300)));
+        actionContainer.appendChild(speakBtn);
 
-        if (actionButtons.length > 0) {
-            actionsHtml = `<div class="ai-bot-card-action">${actionButtons.join("")}</div>`;
+        if (actionContainer.children.length > 0) {
+            bubble.appendChild(actionContainer);
         }
 
-        // Interactive Follow-Up Chips
-        let followUpsHtml = "";
-        if (followUpSuggestions && followUpSuggestions.length > 0) {
-            const chips = followUpSuggestions.map(s => {
-                const safePrompt = s.replace(/'/g, "\\'");
-                return `<button type="button" class="ai-followup-chip" onclick="submitCampusAiQuery('${safePrompt}')">${s}</button>`;
-            }).join("");
-            followUpsHtml = `
-                <div class="ai-msg-followups">
-                    <span style="font-size: 10px; color: #64748b; font-weight: 700; width: 100%; margin-bottom: 2px;">SUGGESTED QUESTIONS:</span>
-                    ${chips}
-                </div>
-            `;
+        // Interactive Follow-Up Chips with direct event handlers
+        if (followUpSuggestions.length > 0) {
+            const followUpsWrap = document.createElement("div");
+            followUpsWrap.className = "ai-msg-followups";
+            const label = document.createElement("span");
+            label.style.cssText = "font-size: 10px; color: #64748b; font-weight: 700; width: 100%; margin-bottom: 2px;";
+            label.textContent = "SUGGESTED QUESTIONS:";
+            followUpsWrap.appendChild(label);
+
+            followUpSuggestions.forEach(s => {
+                const chipBtn = document.createElement("button");
+                chipBtn.type = "button";
+                chipBtn.className = "ai-followup-chip";
+                chipBtn.textContent = s;
+                chipBtn.addEventListener("click", () => submitCampusAiQuery(s));
+                followUpsWrap.appendChild(chipBtn);
+            });
+            bubble.appendChild(followUpsWrap);
         }
 
-        loadingMsg.innerHTML = `
-            <div class="ai-msg-bubble">
-                ${locationBadgeHtml}
-                <p style="margin: 0; line-height: 1.45;">${formattedAnswer}</p>
-                ${actionsHtml}
-                ${followUpsHtml}
-            </div>
-        `;
+        loadingMsg.innerHTML = "";
+        loadingMsg.appendChild(bubble);
 
         // Update conversation history
         campusAiHistory.push({ role: "user", text: q });
@@ -5310,7 +5351,7 @@ async function submitCampusAiQuery(question) {
     } catch (err) {
         loadingMsg.innerHTML = `
             <div class="ai-msg-bubble" style="color: #b91c1c;">
-                Sorry, I could not connect to campus AI right now: ${err.message}
+                Sorry, I could not connect to campus AI right now: ${escapeAiHtml(err.message)}
             </div>
         `;
     } finally {
@@ -5319,6 +5360,8 @@ async function submitCampusAiQuery(question) {
         campusAiMessages.scrollTop = campusAiMessages.scrollHeight;
     }
 }
+
+window.submitCampusAiQuery = submitCampusAiQuery;
 
 if (campusAiForm) {
     campusAiForm.addEventListener("submit", (e) => {

@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { MongoClient } from 'mongodb';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import { buildings, campusEvents } from './campus-data.js';
 import { runCalendarSync } from './sync-kyu-calendar.js';
 
@@ -34,36 +34,67 @@ app.use(express.urlencoded({ extended: true }));
 let geminiClient = null;
 if (process.env.GEMINI_API_KEY) {
   try {
-    geminiClient = new GoogleGenAI({});
+    geminiClient = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
     console.log("Kyambogo Campus Gemini AI initialized successfully.");
   } catch (err) {
     console.warn("Gemini client initialization warning:", err.message);
   }
 }
 
-async function callGeminiAi(prompt, systemInstruction = "", isJson = false) {
+function cleanJsonResponseText(text) {
+  if (!text || typeof text !== "string") return "";
+  return text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+async function callGeminiAi(prompt, systemInstruction = "", isJson = false, responseSchema = null, timeoutMs = 5500) {
   if (!geminiClient) {
     throw new Error("Gemini AI API key not configured");
   }
-  const models = ["gemini-3.1-flash-lite", "gemini-3.8-flash"];
+  const models = ["gemini-4-hydrogen", "gemini-3.1-flash-lite"];
   let lastError = null;
   for (const model of models) {
+    let timer;
     try {
       const config = {};
       if (systemInstruction) config.systemInstruction = systemInstruction;
       if (isJson) config.responseMimeType = "application/json";
+      if (responseSchema) config.responseSchema = responseSchema;
+      if (model === "gemini-4-hydrogen") {
+        config.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
+      }
 
-      const res = await geminiClient.models.generateContent({
+      const apiPromise = geminiClient.models.generateContent({
         model,
         contents: prompt,
         config: Object.keys(config).length > 0 ? config : undefined
       });
+      const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Gemini timeout after ${timeoutMs}ms`)), timeoutMs);
+      });
+
+      const res = await Promise.race([apiPromise, timeoutPromise]);
+      clearTimeout(timer);
       if (res && res.text) {
-        return res.text;
+        return isJson ? cleanJsonResponseText(res.text) : res.text.trim();
       }
     } catch (err) {
+      clearTimeout(timer);
       lastError = err;
       console.warn(`Gemini model ${model} attempt failed:`, err.message);
+      if (err.message && (err.message.includes('timeout') || err.message.includes('PERMISSION_DENIED') || err.message.includes('403'))) {
+        break;
+      }
     }
   }
   throw lastError || new Error("Gemini failed to generate response");
@@ -87,13 +118,18 @@ const aiResponseCache = new Map();
 const CACHE_MAX_ENTRIES = 250;
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-function getCacheKey(question, userLocation) {
-  const normQ = question.trim().toLowerCase().replace(/[?!.,]/g, '');
+function getCacheKey(question, userLocation, history = []) {
+  const normQ = question.trim().toLowerCase().replace(/[?!.,'"]/g, '').replace(/\s+/g, ' ');
+  const lastTurnHint = Array.isArray(history) && history.length > 0
+    ? String(history[history.length - 1]?.text || '').slice(0, 40).toLowerCase().replace(/\s+/g, '_')
+    : '';
+  const hasPronounRef = /\b(there|it|that|this|they|their|walk here|from there)\b/.test(normQ);
+  const histSuffix = hasPronounRef && lastTurnHint ? `:h=${lastTurnHint}` : '';
   if (!userLocation || typeof userLocation.latitude !== 'number') {
-    return `q:${normQ}`;
+    return `q:${normQ}${histSuffix}`;
   }
   const nearId = userLocation.nearestBuilding ? userLocation.nearestBuilding.buildingId : 'none';
-  return `loc:${normQ}:${nearId}`;
+  return `loc:${normQ}:${nearId}${histSuffix}`;
 }
 
 function checkDateRoll() {
@@ -2535,6 +2571,16 @@ app.get("/api/programmes/:programmeId/destination", (req, res) => {
 });
 
 // 9. Comprehensive Search API
+function matchesSearchQuery(fields, query, tokens) {
+  const combined = fields.filter(Boolean).join(' ').toLowerCase();
+  if (!combined) return false;
+  if (combined.includes(query)) return true;
+  if (tokens.length > 1) {
+    return tokens.every(t => combined.includes(t));
+  }
+  return false;
+}
+
 app.get("/api/search", (req, res) => {
   const query = (req.query.q || '').trim().toLowerCase();
 
@@ -2544,12 +2590,16 @@ app.get("/api/search", (req, res) => {
       departments: [],
       faculties: [],
       offices: [],
-      buildings: []
+      buildings: [],
+      events: []
     });
   }
 
+  const stop = new Set(['where', 'is', 'the', 'at', 'in', 'of', 'for', 'to', 'kyambogo', 'university', 'campus', 'find', 'me']);
+  const tokens = query.split(/\s+/).filter(w => w.length > 1 && !stop.has(w));
+
   const matchedProgrammes = programmes
-    .filter(p => p.name.toLowerCase().includes(query) || p.programmeId.toLowerCase().includes(query))
+    .filter(p => matchesSearchQuery([p.name, p.programmeId], query, tokens))
     .slice(0, 10)
     .map(p => {
       const dept = departments.find(d => d.departmentId === p.departmentId);
@@ -2564,7 +2614,7 @@ app.get("/api/search", (req, res) => {
     });
 
   const matchedDepartments = departments
-    .filter(d => d.name.toLowerCase().includes(query) || d.departmentId.toLowerCase().includes(query))
+    .filter(d => matchesSearchQuery([d.name, d.departmentId, d.hodName], query, tokens))
     .slice(0, 10)
     .map(d => {
       const bldg = getBuildingById(d.buildingId);
@@ -2581,7 +2631,7 @@ app.get("/api/search", (req, res) => {
   const isAdmissSearch = query.includes('admiss') || query.includes('adnisi') || query.includes('apply') || query.includes('intake') || query.includes('join');
 
   const matchedFaculties = faculties
-    .filter(f => isAdmissSearch || f.name.toLowerCase().includes(query) || f.shortName.toLowerCase().includes(query) || f.facultyId.toLowerCase().includes(query))
+    .filter(f => isAdmissSearch || matchesSearchQuery([f.name, f.shortName, f.facultyId, f.deanName], query, tokens))
     .slice(0, 8)
     .map(f => {
       const bldg = getBuildingById(f.buildingId);
@@ -2594,17 +2644,24 @@ app.get("/api/search", (req, res) => {
       };
     });
 
-  const matchedOffices = campusOffices
-    .filter(o =>
-      (isAdmissSearch && o.role === 'dean') ||
-      o.title.toLowerCase().includes(query) ||
-      o.officerName.toLowerCase().includes(query) ||
-      o.room.toLowerCase().includes(query) ||
-      o.buildingName.toLowerCase().includes(query) ||
-      (query.includes('hod') && o.role === 'hod') ||
-      (query.includes('dean') && o.role === 'dean') ||
-      (query.includes('staff') && o.role === 'staff')
-    )
+  const exactMatchedOffices = campusOffices.filter(o =>
+    matchesSearchQuery([o.title, o.officerName, o.room, o.buildingName, o.role], query, tokens)
+  );
+  const roleMatchedOffices = (exactMatchedOffices.length === 0 || isAdmissSearch)
+    ? campusOffices.filter(o =>
+        (isAdmissSearch && o.role === 'dean') ||
+        (tokens.length <= 1 && query.includes('hod') && o.role === 'hod') ||
+        (tokens.length <= 1 && query.includes('dean') && o.role === 'dean') ||
+        (tokens.length <= 1 && query.includes('staff') && o.role === 'staff')
+      )
+    : [];
+  const seenOffices = new Set();
+  const matchedOffices = [...exactMatchedOffices, ...roleMatchedOffices]
+    .filter(o => {
+      if (seenOffices.has(o.officeId)) return false;
+      seenOffices.add(o.officeId);
+      return true;
+    })
     .slice(0, 10)
     .map(o => ({
       ...o,
@@ -2614,11 +2671,10 @@ app.get("/api/search", (req, res) => {
 
   const matchedBuildings = buildings
     .filter(b => {
-      // If searching admissions, suppress Senate / Admissions Block from dominating and show faculty buildings
       if (isAdmissSearch && (b.buildingId === 'SENATE-BUILDING' || b.buildingId === 'ADMISSIONS-BLOCK')) {
         return false;
       }
-      return b.name.toLowerCase().includes(query) || (b.description && b.description.toLowerCase().includes(query));
+      return matchesSearchQuery([b.name, b.description, b.type, b.buildingId], query, tokens);
     })
     .slice(0, 10)
     .map(b => ({
@@ -2628,13 +2684,7 @@ app.get("/api/search", (req, res) => {
     }));
 
   const matchedEvents = events
-    .filter(e => isEventUpcoming(e) && (
-      e.title.toLowerCase().includes(query) ||
-      e.description.toLowerCase().includes(query) ||
-      e.category.toLowerCase().includes(query) ||
-      e.buildingName.toLowerCase().includes(query) ||
-      e.organizer.toLowerCase().includes(query)
-    ))
+    .filter(e => isEventUpcoming(e) && matchesSearchQuery([e.title, e.description, e.category, e.buildingName, e.organizer], query, tokens))
     .slice(0, 5)
     .map(e => ({
       ...e,
@@ -3087,6 +3137,228 @@ Required JSON fields:
   }
 });
 
+// ==========================================================================
+// SMART CAMPUS KNOWLEDGE RETRIEVAL & GROUNDED REASONING ENGINE
+// ==========================================================================
+const AI_STOPWORDS = new Set([
+  'where', 'is', 'are', 'was', 'were', 'the', 'a', 'an', 'how', 'to', 'can', 'i',
+  'find', 'locate', 'get', 'what', 'who', 'which', 'for', 'of', 'at', 'in', 'on',
+  'me', 'my', 'you', 'your', 'we', 'us', 'campus', 'kyambogo', 'university', 'kyu',
+  'do', 'does', 'did', 'go', 'directions', 'walk', 'walking', 'route', 'way', 'show',
+  'tell', 'about', 'please', 'located', 'place', 'places', 'near', 'nearest',
+  'closest', 'around', 'there', 'here', 'this', 'that', 'with', 'from', 'and', 'or',
+  'have', 'has', 'need', 'want', 'looking', 'any', 'some'
+]);
+
+const AI_SYNONYM_MAP = {
+  eat: ['cafeteria', 'dining', 'canteen', 'food', 'student center', 'guild'],
+  food: ['cafeteria', 'dining', 'canteen', 'fruit centre', 'student center'],
+  hungry: ['cafeteria', 'dining', 'canteen', 'student center'],
+  lunch: ['cafeteria', 'dining', 'canteen', 'student center'],
+  breakfast: ['cafeteria', 'dining', 'canteen', 'student center'],
+  dinner: ['cafeteria', 'dining', 'canteen', 'student center'],
+  dining: ['dining hall', 'cafeteria', 'east end dining', 'west end dining'],
+  canteen: ['canteen', 'cafeteria', 'student center'],
+  meal: ['cafeteria', 'dining', 'canteen'],
+  sleep: ['hall of residence', 'hall', 'hostel', 'pearl', 'north', 'nanziri', 'mandela', 'kulubya'],
+  hostel: ['hall', 'residence', 'pearl', 'north', 'nanziri', 'mandela', 'kulubya'],
+  accommodation: ['hall', 'residence', 'dean of students'],
+  pray: ['chapel', 'chaplaincy', 'mosque', 'religious'],
+  church: ['chapel', 'chaplaincy', 'religious'],
+  chapel: ['chapel', 'chaplaincy', 'religious'],
+  catholic: ['catholic', 'chaplaincy', 'martyrs'],
+  anglican: ['kakumba', 'protestant', 'chapel'],
+  protestant: ['kakumba', 'anglican', 'chapel'],
+  mosque: ['mosque', 'religious'],
+  worship: ['chapel', 'chaplaincy', 'mosque', 'religious'],
+  bank: ['bank', 'stanbic', 'centenary', 'atm'],
+  atm: ['bank', 'stanbic', 'centenary'],
+  cash: ['bank', 'stanbic', 'centenary'],
+  money: ['bank', 'stanbic', 'centenary', 'bursar'],
+  clinic: ['medical centre', 'medical', 'health'],
+  sick: ['medical centre', 'medical', 'health'],
+  hospital: ['medical centre', 'medical', 'health'],
+  doctor: ['medical centre', 'medical'],
+  pharmacy: ['medical centre', 'medical'],
+  book: ['library', 'harlow', 'barclays'],
+  books: ['library', 'harlow', 'barclays'],
+  study: ['library', 'central teaching facility', 'ctf'],
+  read: ['library', 'barclays'],
+  sport: ['sports', 'pitch', 'cricket', 'oval', 'swimming', 'east end'],
+  sports: ['sports', 'pitch', 'cricket', 'oval', 'swimming'],
+  football: ['pitch', 'east end', 'west end', 'sports'],
+  soccer: ['pitch', 'sports'],
+  swimming: ['swimming', 'pool', 'sports'],
+  gym: ['sports', 'pitch'],
+  police: ['police', 'security'],
+  security: ['police', 'security'],
+  lab: ['laboratory', 'science', 'engineering'],
+  labs: ['laboratory', 'science', 'engineering'],
+  workshop: ['mechanical', 'engineering', 'rac'],
+  exams: ['exam', 'examinations', 'ctf', 'registrar'],
+  exam: ['exam', 'examinations', 'ctf', 'registrar'],
+  graduation: ['graduation', 'east end', 'ceremony'],
+  notice: ['event', 'events', 'notice', 'calendar', 'exam', 'gala'],
+  notices: ['event', 'events', 'notice', 'calendar', 'exam', 'gala'],
+  events: ['event', 'events', 'notice', 'calendar', 'gala', 'expo'],
+  event: ['event', 'events', 'notice', 'calendar', 'gala', 'expo'],
+  today: ['event', 'events', 'notice', 'upcoming', 'happening'],
+  happening: ['event', 'events', 'notice', 'upcoming'],
+  music: ['performing arts', 'mdd', 'music'],
+  drama: ['performing arts', 'mdd'],
+  art: ['art', 'industrial design', 'block 29'],
+  business: ['management', 'entrepreneurship', 'npt', 'some'],
+  computing: ['scis', 'iicd', 'computer', 'bitc'],
+  computer: ['scis', 'iicd', 'computer', 'bitc']
+};
+
+function tokenizeCampusQuery(text) {
+  const rawTokens = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 2 && !AI_STOPWORDS.has(w));
+  const expanded = new Set(rawTokens);
+  for (const t of rawTokens) {
+    if (AI_SYNONYM_MAP[t]) {
+      for (const syn of AI_SYNONYM_MAP[t]) {
+        expanded.add(syn);
+      }
+    }
+  }
+  return { rawTokens, expandedTokens: Array.from(expanded) };
+}
+
+function scoreFieldMatch(text, rawTokens, expandedTokens, exactPhrase) {
+  if (!text) return 0;
+  const lower = String(text).toLowerCase();
+  let score = 0;
+  if (exactPhrase && exactPhrase.length >= 3 && lower.includes(exactPhrase)) {
+    score += 35;
+  }
+  for (const t of rawTokens) {
+    if (lower.includes(t)) score += t.length >= 4 ? 12 : 7;
+  }
+  for (const syn of expandedTokens) {
+    if (!rawTokens.includes(syn) && lower.includes(syn)) {
+      score += 6;
+    }
+  }
+  return score;
+}
+
+function searchCampusKnowledge(question) {
+  const qLower = question.toLowerCase().trim();
+  const { rawTokens, expandedTokens } = tokenizeCampusQuery(question);
+  const cleanPhrase = rawTokens.join(' ');
+
+  const scoredEvents = events
+    .filter(e => isEventUpcoming(e) && e.status !== 'pending_approval')
+    .map(e => {
+      const s =
+        scoreFieldMatch(e.title, rawTokens, expandedTokens, cleanPhrase) * 1.5 +
+        scoreFieldMatch(`${e.category} ${e.categoryLabel} ${e.buildingName} ${e.organizer} ${e.description}`, rawTokens, expandedTokens, cleanPhrase);
+      return { item: e, score: s };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const scoredOffices = campusOffices
+    .map(o => {
+      let s =
+        scoreFieldMatch(`${o.title} ${o.officerName}`, rawTokens, expandedTokens, cleanPhrase) * 1.6 +
+        scoreFieldMatch(`${o.role} ${o.buildingName} ${o.room} ${(o.servicesProvided || []).join(' ')}`, rawTokens, expandedTokens, cleanPhrase);
+      if (qLower.includes('dean') && o.role === 'dean') s += 14;
+      if ((qLower.includes('hod') || qLower.includes('head')) && o.role === 'hod') s += 14;
+      if (qLower.includes('registrar') && o.officeId === 'OFFICE-ACADEMIC-REGISTRAR') s += 25;
+      if ((qLower.includes('vice chancellor') || /\bvc\b/.test(qLower)) && o.officeId === 'OFFICE-VICE-CHANCELLOR') s += 25;
+      return { item: o, score: s };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const scoredFaculties = faculties
+    .map(f => ({
+      item: f,
+      score:
+        scoreFieldMatch(`${f.name} ${f.shortName} ${f.facultyId}`, rawTokens, expandedTokens, cleanPhrase) * 1.5 +
+        scoreFieldMatch(`${f.deanName} ${f.description || ''}`, rawTokens, expandedTokens, cleanPhrase)
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const scoredDepartments = departments
+    .map(d => ({
+      item: d,
+      score:
+        scoreFieldMatch(`${d.name} ${d.departmentId}`, rawTokens, expandedTokens, cleanPhrase) * 1.5 +
+        scoreFieldMatch(`${d.hodName} ${d.hodTitle || ''}`, rawTokens, expandedTokens, cleanPhrase)
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const scoredProgrammes = programmes
+    .map(p => ({
+      item: p,
+      score: scoreFieldMatch(`${p.name} ${p.programmeId}`, rawTokens, expandedTokens, cleanPhrase) * 1.4
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const scoredBuildings = buildings
+    .map(b => ({
+      item: b,
+      score:
+        scoreFieldMatch(b.name, rawTokens, expandedTokens, cleanPhrase) * 1.7 +
+        scoreFieldMatch(`${b.type} ${b.description} ${b.buildingId.replace(/-/g, ' ')}`, rawTokens, expandedTokens, cleanPhrase)
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const scoredDestinations = destinations
+    .map(d => ({
+      item: d,
+      score: scoreFieldMatch(`${d.name} ${d.type} ${d.officeDetails?.head || ''} ${d.officeDetails?.room || ''}`, rawTokens, expandedTokens, cleanPhrase) * 1.3
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  return {
+    rawTokens,
+    expandedTokens,
+    events: scoredEvents,
+    offices: scoredOffices,
+    faculties: scoredFaculties,
+    departments: scoredDepartments,
+    programmes: scoredProgrammes,
+    buildings: scoredBuildings,
+    destinations: scoredDestinations
+  };
+}
+
+const ASK_CAMPUS_RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    answer: {
+      type: Type.STRING,
+      description: "Helpful, direct, specific answer grounded in Kyambogo campus facts (2-4 sentences)."
+    },
+    suggestedBuildingId: {
+      type: Type.STRING,
+      nullable: true,
+      description: "Exact buildingId from the directory if a specific campus location applies, otherwise null."
+    },
+    suggestedBuildingName: {
+      type: Type.STRING,
+      nullable: true,
+      description: "Exact building name matching suggestedBuildingId, or null."
+    },
+    actionType: {
+      type: Type.STRING,
+      description: "One of: navigate, current_location, request_location, info, events"
+    },
+    followUpSuggestions: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description: "2 to 3 natural follow-up questions relevant to this topic."
+    }
+  },
+  required: ["answer", "actionType", "followUpSuggestions"]
+};
+
 // 2. Interactive Campus AI Guide & Navigator
 app.post("/api/ai/ask-campus", async (req, res) => {
   const { question, visitorId, userLocation, history } = req.body;
@@ -3100,7 +3372,7 @@ app.post("/api/ai/ask-campus", async (req, res) => {
   todayVisitorsSet.add(vid);
 
   // 1. Quota Protection: Check in-memory AI response cache first
-  const cacheKey = getCacheKey(question, userLocation);
+  const cacheKey = getCacheKey(question, userLocation, history);
   const cachedEntry = aiResponseCache.get(cacheKey);
   if (cachedEntry && (Date.now() - cachedEntry.timestamp < CACHE_TTL_MS)) {
     return res.json({
@@ -3110,7 +3382,33 @@ app.post("/api/ai/ask-campus", async (req, res) => {
     });
   }
 
+  const retrieval = searchCampusKnowledge(question);
+
   const buildingSummary = buildings.map(b => `${b.buildingId}: "${b.name}" (${b.type}) - ${b.description}`).join("\n");
+
+  const activeEventsSummary = events
+    .filter(e => isEventUpcoming(e) && e.status !== 'pending_approval')
+    .slice(0, 12)
+    .map(e => `- "${e.title}" | Category: ${e.category} | Date: ${e.dateFormatted || e.startDate} (${e.time}) | Venue: ${e.buildingName} [${e.buildingId}], ${e.room} | Organizer: ${e.organizer}`)
+    .join("\n");
+
+  const relevantOfficesSummary = retrieval.offices
+    .filter(x => x.score > 0)
+    .slice(0, 6)
+    .map(x => {
+      const o = x.item;
+      return `- ${o.title} | Officer: ${o.officerName} | Location: ${o.buildingName} [${o.buildingId}], ${o.floor}, ${o.room} | Hours: ${o.officeHours} | Email: ${o.email || 'N/A'}`;
+    })
+    .join("\n");
+
+  const relevantAcademicSummary = [
+    ...retrieval.faculties.filter(x => x.score > 0).slice(0, 4).map(x => `- Faculty: ${x.item.name} (${x.item.facultyId}) | Dean: ${x.item.deanName} | Building: ${x.item.buildingId}, ${x.item.deanOfficeFloor}, ${x.item.deanOfficeRoom}`),
+    ...retrieval.departments.filter(x => x.score > 0).slice(0, 5).map(x => `- Dept: ${x.item.name} (${x.item.facultyId}) | HOD: ${x.item.hodName} | Building: ${x.item.buildingId}, ${x.item.hodOfficeFloor}, ${x.item.hodOfficeRoom}`),
+    ...retrieval.programmes.filter(x => x.score > 0).slice(0, 4).map(x => {
+      const dept = departments.find(d => d.departmentId === x.item.departmentId);
+      return `- Programme: ${x.item.name} (${x.item.duration || ''}) | Department: ${dept?.name || x.item.departmentId} | Building: ${dept?.buildingId || ''}`;
+    })
+  ].join("\n");
 
   let locationContextStr = "User Physical Location: Not yet shared by user's browser/device.";
   if (userLocation && typeof userLocation.latitude === "number" && typeof userLocation.longitude === "number") {
@@ -3130,7 +3428,7 @@ app.post("/api/ai/ask-campus", async (req, res) => {
   }
 
   const systemInstruction = `You are "Kyambogo Campus AI", the official interactive intelligent navigator for Kyambogo University Main Campus on Kyambogo Hill, Kampala, Uganda.
-You know all university facilities, offices, deans, dining halls, halls of residence, sports grounds, and lecture theatres.
+You know all university facilities, offices, deans, HODs, dining halls, halls of residence, sports grounds, notice board events, and lecture theatres.
 
 ${locationContextStr}
 
@@ -3138,8 +3436,7 @@ Key Spatial Landmarks & Facts:
 - CRITICAL ADMISSIONS DIRECTIVE:
   When inquiries about ADMISSIONS, applications, course requirements, intake, program eligibility, joining Kyambogo University, or admission vetting are made:
   DO NOT DIRECT APPLICANTS OR STUDENTS TO THE SENATE BUILDING OR ADMISSIONS BLOCK!
-  The authoritative and required destination is to the FACULTY HEAD (Faculty Dean / Dean's Office / Head of Department) of the respective faculty or school!
-  At Kyambogo University, all academic qualification vetting, subject combination checks, program counseling, and admission requirements are conducted directly by the Faculty Head / Dean's Office:
+  The authoritative and required destination is to the FACULTY HEAD (Faculty Dean / Dean's Office / Head of Department) of the respective faculty or school:
   * Faculty of Engineering (FOE): Dean Dr. Catherine Wandera, Faculty of Engineering & Science Complex, 2nd Floor, Room FE-201 (FACULTY-SCIENCE-ENGINEERING).
   * School of Computing & Information Science (SCIS): Dean Dr. John B. Ngubiri, IICD Building, 3rd Floor, Room CS-301 (SCIS-BLOCK); or HOD BITC in Engineering Complex Wing B.
   * Faculty of Education (FOED): Dean Assoc. Prof. Joyce Ayikoru, Faculty of Education Building, 1st Floor, Room ED-101 (FACULTY-EDUCATION).
@@ -3151,66 +3448,36 @@ Key Spatial Landmarks & Facts:
   * Faculty of Special Needs & Rehabilitation (FSNR): Dean Dr. Patrick Ojok, Special Needs Complex, Ground Floor, Room SN-101 (FSNR-BLOCK).
   * School of Vocational Studies (SOVS): Dean Dr. Florence Kyomugisha, School of Vocational Studies, 1st Floor, Room VS-102 (SOVS-BLOCK).
   * Institute of Distance Education, e-Learning (IDAEL): Director Dr. Robert Ayine, ODL Centre, 2nd Floor, Room ODL-202 (ODL-CENTRE).
-  If no specific course is mentioned in an admissions query, explain that admissions and course vetting are managed directly by each Faculty Head (Dean of Faculty) rather than central Senate, and ask which field they are applying for.
-- Faculty of Agriculture & Animal Sciences (FOA): Located at East End near Barclays Library & East End Farm. Offers B.Voc Agriculture with Education, Agribusiness, Crop Science & Animal Production.
-- Kyambogo University Medical Centre (Health Services): Located at East Campus on Fisher Road, opposite East Campus Gate and adjacent to Home Economics / Family Life complex, sharing the boundary fence with Nabisunsa Girls.
-- Department of Library and Information Science (BLIS): Located on the 1st Floor of the Central Library (Harlow Building). HOD BLIS office is in the Central Library ICT & LIS Wing.
-- Department of Computer Science & IT / HOD Bachelor of Information Technology & Computing (BITC): Located at the Faculty of Engineering & Science Complex (Wing B).
-- Faculty of Arts & Humanities (FAH): Located at East End beside the Senate Building and Admissions Office.
-- Department of Performing Arts (Music, Dance & Drama - MDD / Music Centre): Directly adjacent to the Faculty of Arts building at East End.
-- School of Computing & Information Science (SCIS): The Dean's office is on the 3rd Floor of the IICD Building at East End.
-- East End Dining Hall: Serves Mandela Hall and Nanziri Hall at East End.
-- West End Dining Hall: Near Pearl Hall, Kulubya Hall, and West End Pitch.
-- Central Teaching Facility (CTF): Large multi-deck lecture theatre complex in the central academic zone.
-- Spiritual & Faith Centres: St. Kakumba Chapel (Anglican), Our Lady of Good Counsel Catholic Chapel, and Kyambogo University Mosque.
-- AUTHORITATIVE KYAMBOGO UNIVERSITY RESEARCH & ADMISSIONS SOURCES:
-  * Official Admissions Application Portal: https://admissions.kyu.ac.ug (Online application submission & requirements)
-  * Directorate of Academic Registrar (AR): https://ar.kyu.ac.ug (Academic calendar, admissions lists, regulations)
-  * Student Information System (ACIS / MyPortal): https://myportal.kyu.ac.ug (Student registration, results, tuition)
-  * Official University Website: https://kyu.ac.ug
-  * Kyambogo University E-Learning Platform (KELMS): https://kelms.kyu.ac.ug
-  * University Central Library Digital Repository: https://lib.kyu.ac.ug
-  * Directorate of Research and Graduate Training (DRGT): Research proposals, postgraduate degrees, ethics clearance
-  When users ask about researching courses, checking eligibility, applying online, or reviewing university regulations, cite these official sources directly.
+- Portals: Admissions https://admissions.kyu.ac.ug | Academic Registrar https://ar.kyu.ac.ug | MyPortal https://myportal.kyu.ac.ug | Website https://kyu.ac.ug | E-Learning https://kelms.kyu.ac.ug | Library https://lib.kyu.ac.ug
 
+${activeEventsSummary ? `Upcoming Campus Events & Notice Board:\n${activeEventsSummary}\n` : ''}
+${relevantOfficesSummary ? `Top Matched Offices / Heads for Query:\n${relevantOfficesSummary}\n` : ''}
+${relevantAcademicSummary ? `Top Matched Faculties / Departments / Programmes:\n${relevantAcademicSummary}\n` : ''}
 Campus Buildings Directory:
 ${buildingSummary}
 
 Rules for Responses:
-1. "Where am I located?" / "Where am I?" / "What building am I near?":
-   - If user GPS coordinates are provided above:
-     Accurately explain their exact position! Tell them they are currently approximately ${userLocation?.nearestBuilding?.distanceMeters || 'a few'} meters from ${userLocation?.nearestBuilding?.name || 'their nearest building'} on Kyambogo Hill. Mention the surrounding buildings and offer walking directions to their destination.
-     Set "actionType": "current_location", "suggestedBuildingId": "${userLocation?.nearestBuilding?.buildingId || ''}".
-   - If user GPS is NOT provided:
-     Explain that their GPS is currently off or waiting for permission, and invite them to tap "📍 Detect My Location" to pinpoint their exact spot!
-     Set "actionType": "request_location", "suggestedBuildingId": null.
-2. ADMISSIONS INQUIRIES:
-   - For ANY questions about admissions, requirements, applications, intake, or joining a course:
-     Always direct the applicant to the FACULTY HEAD (Faculty Dean / Dean's Office / HOD) of that academic faculty.
-     Never direct admissions to Senate. Set suggestedBuildingId to that Faculty Head's building and actionType: "navigate".
-3. For specific building/department questions, identify the exact "suggestedBuildingId" from the directory so the map can navigate them.
-4. Always supply 2 to 3 natural follow-up prompt chips in "followUpSuggestions".
-5. Keep answers friendly, conversational, warm, and concise (2-4 clear sentences).
-6. Always output strict JSON matching the schema.`;
+1. Answer the user's EXACT specific question uniquely and directly! Never give a generic unrelated building if they asked about events, dining, halls, banks, offices, deans, or courses.
+2. "Where am I located?" / "Where am I?" / "What building am I near?":
+   - If user GPS coordinates are provided above: explain their exact position (~${userLocation?.nearestBuilding?.distanceMeters || 'a few'}m from ${userLocation?.nearestBuilding?.name || 'their nearest building'}) and set "actionType": "current_location", "suggestedBuildingId": "${userLocation?.nearestBuilding?.buildingId || ''}".
+   - If user GPS is NOT provided: invite them to tap "📍 Detect My Location" and set "actionType": "request_location", "suggestedBuildingId": null.
+3. ADMISSIONS INQUIRIES: Always direct to the FACULTY HEAD (Faculty Dean / HOD), set suggestedBuildingId to that Faculty Head's building and actionType: "navigate".
+4. EVENTS & NOTICES: Summarize the matching upcoming events with dates, times, and venues, and set actionType: "events" and suggestedBuildingId to the featured event's buildingId.
+5. For any specific building/office/hall/service question, set "suggestedBuildingId" from the directory so the map can navigate them.
+6. Supply 2 to 3 distinct, topic-relevant follow-up questions in "followUpSuggestions".
+7. Keep answers warm, specific, accurate, and concise (2-4 clear sentences).`;
 
-  const userPrompt = `${conversationHistoryStr ? conversationHistoryStr + "\n\n" : ""}User asks: "${question}"
-
-Output JSON format:
-{
-  "answer": string,
-  "suggestedBuildingId": string or null,
-  "suggestedBuildingName": string or null,
-  "actionType": "navigate" | "current_location" | "request_location" | "info" | "events",
-  "followUpSuggestions": string[]
-}`;
+  const userPrompt = `${conversationHistoryStr ? conversationHistoryStr + "\n\n" : ""}User asks: "${question}"`;
 
   try {
-    const rawResult = await callGeminiAi(userPrompt, systemInstruction, true);
+    const rawResult = await callGeminiAi(userPrompt, systemInstruction, true, ASK_CAMPUS_RESPONSE_SCHEMA, 6500);
     const parsed = JSON.parse(rawResult);
 
     if (parsed.suggestedBuildingId) {
-      const bldg = buildings.find(b => b.buildingId === parsed.suggestedBuildingId);
+      const bldg = getBuildingById(parsed.suggestedBuildingId) || buildings.find(b => b.buildingId === parsed.suggestedBuildingId);
       if (bldg) {
+        parsed.suggestedBuildingId = bldg.buildingId;
+        parsed.suggestedBuildingName = bldg.name;
         parsed.building = {
           buildingId: bldg.buildingId,
           name: bldg.name,
@@ -3253,10 +3520,10 @@ Output JSON format:
     });
   } catch (err) {
     console.warn("AI Ask Campus using Offline Grounded Engine (Reason:", err.message, ")");
-    
-    // Comprehensive Offline Campus Grounded Reasoner (Quota Exceeded & Offline Protection)
+
+    // Comprehensive Multi-Entity Grounded Reasoner (Zero default-to-Library bug)
     const qLower = question.toLowerCase();
-    const isLocationQuery = qLower.includes("where am i") || qLower.includes("where i am") || qLower.includes("my location") || qLower.includes("where located") || qLower.includes("closest to me");
+    const isLocationQuery = /\b(where am i|where i am|my location|where located|closest to me|closest building|nearest to me|near me)\b/i.test(qLower);
 
     if (isLocationQuery) {
       if (userLocation && userLocation.nearestBuilding) {
@@ -3289,93 +3556,152 @@ Output JSON format:
             suggestedBuildingName: null,
             building: null,
             actionType: "request_location",
-            followUpSuggestions: ["Where is Central Library?", "Where is Faculty of Arts?", "Where is the Senate Building?"]
+            followUpSuggestions: ["Where is Central Library?", "Where is Pearl Hall?", "Where is East End Dining Hall?"]
           }
         });
       }
     }
 
-    // Specific Landmark, Admissions & Department Heuristic Matchers
     let matchedBldg = null;
     let fallbackAnswer = "";
-    let followUps = ["Walk there from here", "What offices are inside?", "Find nearest dining hall"];
+    let actionType = "navigate";
+    let followUps = ["Where is the Student Center?", "What events are coming up?", "Where do I go for admissions?"];
 
     // 1. Authoritative Admissions Directive: Direct to Faculty Head (Faculty Dean / HOD), NOT Senate
-    const isAdmissionsQuery = qLower.includes("admiss") || 
-      qLower.includes("adnisi") || 
-      qLower.includes("apply") || 
-      qLower.includes("applying") || 
-      qLower.includes("intake") || 
-      qLower.includes("join") || 
+    const isAdmissionsQuery = qLower.includes("admiss") ||
+      qLower.includes("adnisi") ||
+      qLower.includes("apply") ||
+      qLower.includes("applying") ||
+      qLower.includes("intake") ||
+      /\bjoin(ing)?\b/.test(qLower) ||
       (qLower.includes("course") && (qLower.includes("require") || qLower.includes("entry") || qLower.includes("qualif"))) ||
       (qLower.includes("senat") && (qLower.includes("admiss") || qLower.includes("adnisi")));
 
     if (isAdmissionsQuery) {
       if (qLower.includes("engineer") || qLower.includes("civil") || qLower.includes("mech") || qLower.includes("electr") || qLower.includes("telecom") || qLower.includes("automotive") || qLower.includes("mining")) {
-        matchedBldg = buildings.find(b => b.buildingId === "FACULTY-SCIENCE-ENGINEERING");
-        fallbackAnswer = "For **Engineering Admissions**, requirements, and qualification vetting, report directly to the **Faculty Head: Dean of Engineering (Dr. Catherine Wandera)** at the **Faculty of Engineering & Science Complex, 2nd Floor, Room FE-201** (do NOT go to Senate). The Faculty Dean's office conducts all department-level entry vetting, course clearances, and academic approvals.";
-        followUps = ["Navigate to Engineering Dean", "Who is the Dean of Engineering?", "What departments are in Engineering?"];
-      } else if (qLower.includes("comput") || qLower.includes("bitc") || qLower.includes("software") || qLower.includes("information system") || qLower.includes("cs ") || qLower.includes("it ")) {
-        matchedBldg = buildings.find(b => b.buildingId === "SCIS-BLOCK") || buildings.find(b => b.buildingId === "FACULTY-SCIENCE-ENGINEERING");
-        fallbackAnswer = "For **Computing & IT Admissions** (Computer Science, Software Engineering, BITC, Information Systems), report directly to the **Faculty Head: Dean of SCIS (Dr. John B. Ngubiri)** at the **IICD Building, 3rd Floor, Room CS-301** (or HOD BITC in Engineering Complex Wing B). Course eligibility and admission clearances are handled at the Faculty Dean's office, NOT Senate!";
-        followUps = ["Navigate to Computing Dean (IICD)", "Where is HOD BITC?", "Where is Central Library?"];
+        matchedBldg = getBuildingById("FACULTY-SCIENCE-ENGINEERING");
+        fallbackAnswer = "For **Engineering Admissions**, requirements, and qualification vetting, report directly to the **Faculty Head: Dean of Engineering (Dr. Catherine Wandera)** at the **Faculty of Engineering & Science Complex, 2nd Floor, Room FE-201** (do NOT go to Senate). The Faculty Dean's office conducts all department-level entry vetting and academic approvals.";
+        followUps = ["Navigate to Engineering Complex", "Who is HOD Civil Engineering?", "Where is Mechanical Engineering?"];
+      } else if (qLower.includes("comput") || qLower.includes("bitc") || qLower.includes("software") || qLower.includes("information system") || /\b(cs|it|scis|iicd)\b/.test(qLower)) {
+        matchedBldg = getBuildingById("SCIS-BLOCK") || getBuildingById("FACULTY-SCIENCE-ENGINEERING");
+        fallbackAnswer = "For **Computing & IT Admissions** (Computer Science, Software Engineering, BITC, Information Systems), report directly to the **Faculty Head: Dean of SCIS (Dr. John B. Ngubiri)** at the **IICD Building, 3rd Floor, Room CS-301** (or HOD BITC in Engineering Complex Wing B). Course eligibility and admission clearances are handled at the Faculty Dean's office, NOT Senate.";
+        followUps = ["Where is the IICD Building?", "Where is HOD BITC?", "Where is Central Library?"];
       } else if (qLower.includes("educat") || qLower.includes("teach") || qLower.includes("psychology")) {
-        matchedBldg = buildings.find(b => b.buildingId === "FACULTY-EDUCATION");
-        fallbackAnswer = "For **Education Admissions** (Teacher Education, Arts/Science with Education, Curriculum Studies), report directly to the **Faculty Head: Dean of Education (Assoc. Prof. Joyce Ayikoru)** at the **Faculty of Education Building, 1st Floor, Room ED-101**. Academic vetting and subject combination clearance are issued at the Faculty Dean's office.";
-        followUps = ["Navigate to Faculty of Education", "Who is the Dean of Education?", "Where is CTF?"];
+        matchedBldg = getBuildingById("FACULTY-EDUCATION");
+        fallbackAnswer = "For **Education Admissions**, report directly to the **Faculty Head: Dean of Education (Assoc. Prof. Joyce Ayikoru)** at the **Faculty of Education Building, 1st Floor, Room ED-101**. Subject combination clearance is issued at the Faculty Dean's office.";
+        followUps = ["Navigate to Faculty of Education", "Where is CTF?", "Where is West End Library?"];
       } else if (qLower.includes("agric") || qLower.includes("crop") || qLower.includes("animal production") || qLower.includes("bvoc")) {
-        matchedBldg = buildings.find(b => b.buildingId === "FACULTY-AGRICULTURE");
-        fallbackAnswer = "For **Agriculture & Animal Sciences Admissions**, report directly to the **Faculty Head: Dean of Agriculture (Assoc. Prof. Joseph Ssennyonga)** at the **Faculty of Agriculture Complex, 2nd Floor, Room AG-201** at East End. The Faculty Head verifies qualification requirements and issues academic clearance.";
-        followUps = ["Navigate to Faculty of Agriculture", "Who is the Dean of Agriculture?", "Where is Barclays Library?"];
+        matchedBldg = getBuildingById("FACULTY-AGRICULTURE");
+        fallbackAnswer = "For **Agriculture & Animal Sciences Admissions**, report directly to the **Faculty Head: Dean of Agriculture (Assoc. Prof. Joseph Ssennyonga)** at the **Faculty of Agriculture Complex, 2nd Floor, Room AG-201** at East End.";
+        followUps = ["Navigate to Faculty of Agriculture", "Where is Barclays Library?", "Where is East End Dining Hall?"];
       } else if (qLower.includes("arts") || qLower.includes("humanit") || qLower.includes("language") || qLower.includes("literature") || qLower.includes("history") || qLower.includes("performing") || qLower.includes("mdd")) {
-        matchedBldg = buildings.find(b => b.buildingId === "FACULTY-ARTS");
-        fallbackAnswer = "For **Arts & Humanities Admissions**, report directly to the **Faculty Head: Dean of Arts and Humanities (Assoc. Prof. Dr. Robert Ojambo)** at the **Faculty of Arts Building, 1st Floor, Room A-101**. The Faculty Dean provides direct admissions clearance and subject combination guidance.";
-        followUps = ["Navigate to Faculty of Arts", "Where is Department of MDD?", "Where is Central Library?"];
+        matchedBldg = getBuildingById("FACULTY-ARTS");
+        fallbackAnswer = "For **Arts & Humanities Admissions**, report directly to the **Faculty Head: Dean of Arts and Humanities (Assoc. Prof. Dr. Robert Ojambo)** at the **Faculty of Arts Building, 1st Floor, Room A-101**.";
+        followUps = ["Navigate to Faculty of Arts", "Where is Department of MDD?", "Where is Department of Languages?"];
       } else if (qLower.includes("business") || qLower.includes("bba") || qLower.includes("account") || qLower.includes("finance") || qLower.includes("procurement") || qLower.includes("market") || qLower.includes("management") || qLower.includes("some")) {
-        matchedBldg = buildings.find(b => b.buildingId === "NPT-BUILDING");
-        fallbackAnswer = "For **Business & Management Admissions (SOME)**, report directly to the **Faculty Head: Dean of Management & Entrepreneurship (Dr. Regis Namuddu)** at the **NPT Complex, 2nd Floor, Room MB-205**. Entry vetting and course clearance are handled at the Faculty Dean's level.";
-        followUps = ["Navigate to SOME (NPT Complex)", "Who is the Dean of SOME?", "Where is Stanbic Bank?"];
+        matchedBldg = getBuildingById("NPT-BUILDING");
+        fallbackAnswer = "For **Business & Management Admissions (SOME)**, report directly to the **Faculty Head: Dean of Management & Entrepreneurship (Dr. Regis Namuddu)** at the **NPT Complex, 2nd Floor, Room MB-205**.";
+        followUps = ["Navigate to NPT Complex", "Where is Stanbic Bank?", "Where is Student Center?"];
       } else if (qLower.includes("built") || qLower.includes("architect") || qLower.includes("survey") || qLower.includes("quantity") || qLower.includes("planning") || qLower.includes("sbe")) {
-        matchedBldg = buildings.find(b => b.buildingId === "SCHOOL-BUILT-ENVIRONMENT");
-        fallbackAnswer = "For **Built Environment Admissions** (Architecture, Building Economics, Land Economics, Physical Planning), report directly to the **Faculty Head: Dean of SBE (Dr. Anthony Gidudu)** at the **School of Built Environment, 1st Floor, Room SBE-105**.";
-        followUps = ["Navigate to School of Built Environment", "Where is North Hall?", "Where is Engineering Complex?"];
+        matchedBldg = getBuildingById("SCHOOL-BUILT-ENVIRONMENT");
+        fallbackAnswer = "For **Built Environment Admissions**, report directly to the **Faculty Head: Dean of SBE (Dr. Anthony Gidudu)** at the **School of Built Environment, 1st Floor, Room SBE-105**.";
+        followUps = ["Navigate to School of Built Environment", "Where is North Hall?", "Where is FSNR?"];
       } else if (qLower.includes("special need") || qLower.includes("rehab") || qLower.includes("sign language") || qLower.includes("fsnr")) {
-        matchedBldg = buildings.find(b => b.buildingId === "FSNR-BLOCK");
+        matchedBldg = getBuildingById("FSNR-BLOCK");
         fallbackAnswer = "For **Special Needs & Rehabilitation Admissions**, report directly to the **Faculty Head: Dean of FSNR (Dr. Patrick Ojok)** at the **Special Needs Complex, Ground Floor, Room SN-101**.";
-        followUps = ["Navigate to Special Needs Faculty", "Where is North Hall?", "Where is Kyambogo Mosque?"];
+        followUps = ["Navigate to Special Needs Faculty", "Where is School of Built Environment?", "Where is Medical Centre?"];
       } else if (qLower.includes("vocational") || qLower.includes("catering") || qLower.includes("hotel") || qLower.includes("nutrition") || qLower.includes("cosmetology") || qLower.includes("fashion") || qLower.includes("sovs")) {
-        matchedBldg = buildings.find(b => b.buildingId === "SOVS-BLOCK");
-        fallbackAnswer = "For **Vocational Studies Admissions** (Hotel & Catering, Nutrition & Dietetics, Fashion & Cosmetology), report directly to the **Faculty Head: Dean of SOVS (Dr. Florence Kyomugisha)** at the **School of Vocational Studies, 1st Floor, Room VS-102**.";
-        followUps = ["Navigate to School of Vocational Studies", "Where is Education Faculty?", "Where is West End Dining?"];
+        matchedBldg = getBuildingById("SOVS-BLOCK");
+        fallbackAnswer = "For **Vocational Studies Admissions**, report directly to the **Faculty Head: Dean of SOVS (Dr. Florence Kyomugisha)** at the **School of Vocational Studies, 1st Floor, Room VS-102**.";
+        followUps = ["Navigate to School of Vocational Studies", "Where is Faculty of Education?", "Where is West End Dining?"];
       } else {
-        matchedBldg = buildings.find(b => b.buildingId === "FACULTY-SCIENCE-ENGINEERING");
-        fallbackAnswer = "For academic admissions, qualification vetting, course requirements, and departmental clearance at Kyambogo University, you must report directly to your **Faculty Head (Dean of Faculty)** rather than the Senate Building! You can also apply online and check application requirements directly via the official Kyambogo portal: **https://admissions.kyu.ac.ug**. Each Faculty Dean verifies academic eligibility and approves entry for their specific programmes. Which course or faculty are you applying for? (e.g., Engineering, Computing, Education, Business, Arts, Agriculture, Built Environment)";
-        followUps = ["Engineering Admissions (Faculty Head)", "Computing (BITC) Admissions", "Education Admissions (Faculty Head)", "Business Admissions (Faculty Head)", "Agriculture Admissions (Faculty Head)"];
+        matchedBldg = getBuildingById("FACULTY-SCIENCE-ENGINEERING");
+        fallbackAnswer = "For academic admissions, qualification vetting, and course clearance at Kyambogo University, report directly to your **Faculty Head (Dean of Faculty)** rather than the Senate Building, and apply online via **https://admissions.kyu.ac.ug**. Tell me which programme or faculty you are interested in (e.g., Engineering, Computing, Education, Business, Arts, Agriculture, Built Environment) for the exact Dean's office.";
+        actionType = "info";
+        matchedBldg = null;
+        followUps = ["Engineering Admissions", "Computing (SCIS) Admissions", "Business (SOME) Admissions"];
       }
-    } else if (qLower.includes("medical") || qLower.includes("hospital") || qLower.includes("clinic") || qLower.includes("health")) {
-      matchedBldg = buildings.find(b => b.buildingId === "KYU-MEDICAL-CENTRE") || buildings.find(b => b.type === "medical");
-      fallbackAnswer = "The **Kyambogo University Medical Centre** is located on Kyambogo Road at coordinates (0.347841, 32.625019) on Kyambogo campus, opposite the health gate. It provides 24/7 outpatient, emergency, laboratory, and pharmacy services.";
-      followUps = ["Navigate to Medical Centre", "Where is Central Library?", "Where is the Senate Building?"];
-    } else if (qLower.includes("agriculture") || qLower.includes("agric") || qLower.includes("crop") || qLower.includes("animal production") || qLower.includes("bvoc")) {
-      matchedBldg = buildings.find(b => b.buildingId === "FACULTY-AGRICULTURE");
-      fallbackAnswer = "The **Faculty of Agriculture & Animal Sciences Complex** is located at East End near the Barclays Library and the East End Demonstration Farm. It houses the Dean's Office, Department of Agriculture & Animal Production, and labs for Crop Science, Soil Science, and Agribusiness.";
-      followUps = ["Navigate to Faculty of Agriculture", "Who is the Dean of Agriculture?", "Where is the East End Dining Hall?"];
-    } else if (qLower.includes("library and information") || qLower.includes("blis") || qLower.includes("dlis")) {
-      matchedBldg = buildings.find(b => b.buildingId === "CENTRAL-LIBRARY");
-      fallbackAnswer = "The **Department of Library and Information Science (BLIS)** and the HOD Office are located on the **1st Floor of the Central Library (Harlow Building)** in the ICT & LIS Wing, right at the central academic spine of Kyambogo campus.";
-      followUps = ["Navigate to Central Library", "Where is SCIS IICD Building?", "Where is the CTF?"];
-    } else if (qLower.includes("information technology and computing") || qLower.includes("bitc") || (qLower.includes("computing") && qLower.includes("engineering"))) {
-      matchedBldg = buildings.find(b => b.buildingId === "FACULTY-SCIENCE-ENGINEERING");
-      fallbackAnswer = "The **HOD Office for Bachelor of Information Technology & Computing (BITC)** is located in **Wing B (Room EC-108)** of the **Faculty of Engineering & Science Complex**, situated along the West End academic avenue near the engineering labs.";
-      followUps = ["Navigate to Engineering Complex", "Where is the Central Library?", "Where is the Senate Building?"];
     } else {
-      matchedBldg = buildings.find(b => 
-        qLower.includes(b.name.toLowerCase()) || 
-        (b.description && qLower.includes(b.description.toLowerCase())) ||
-        (b.buildingId && qLower.includes(b.buildingId.toLowerCase().replace('-', ' ')))
-      ) || buildings.find(b => b.buildingId === "CENTRAL-LIBRARY");
+      // 2. Check Live Events & Notice Board Intent
+      const isEventsIntent = /\b(event|events|notice|notices|noticeboard|calendar|agenda|schedule|happening|today|this week|upcoming|gala|graduation|debate|expo|exam|exams|examination|outreach)\b/i.test(qLower);
+      const topEvent = retrieval.events[0];
+      const topOffice = retrieval.offices[0];
+      const topFaculty = retrieval.faculties[0];
+      const topDept = retrieval.departments[0];
+      const topProg = retrieval.programmes[0];
+      const topBldg = retrieval.buildings[0];
+      const topDest = retrieval.destinations[0];
 
-      fallbackAnswer = matchedBldg ? `You can find **${matchedBldg.name}** on Kyambogo campus at coordinates ${matchedBldg.latitude.toFixed(6)}, ${matchedBldg.longitude.toFixed(6)}. ${matchedBldg.description}` : "Kyambogo University features academic faculties, administrative offices, dining halls, and student accommodation spread across East End and West End.";
+      if (isEventsIntent || (topEvent && topEvent.score >= 22)) {
+        const upcoming = retrieval.events.filter(x => x.score > 0).slice(0, 3);
+        const listToShow = upcoming.length > 0 ? upcoming.map(x => x.item) : events.filter(isEventUpcoming).slice(0, 3);
+        if (listToShow.length > 0) {
+          const lead = listToShow[0];
+          matchedBldg = getBuildingById(lead.buildingId);
+          actionType = "events";
+          const summaries = listToShow.map(ev => `• **${ev.title}** (${ev.dateFormatted || ev.startDate}, ${ev.time}) at **${ev.buildingName}**`).join(" ");
+          fallbackAnswer = upcoming.length > 0
+            ? `Here are the matching Kyambogo campus events on the notice board: ${summaries}`
+            : `Upcoming events on the Kyambogo campus notice board include: ${summaries}`;
+          followUps = [`Walk to ${lead.buildingName}`, "Where is Peace Park?", "Where is Central Teaching Facility?"];
+        } else {
+          actionType = "info";
+          fallbackAnswer = "There are currently no active upcoming events matching that date on the campus notice board. Check the Events filter chip at the top of the map for newly posted university notices.";
+          followUps = ["Where is Central Teaching Facility?", "Where is Student Center?", "Where is East End Pitch?"];
+        }
+      } else {
+        // Pick the highest-scoring factual match across Offices, Faculties, Departments, Programmes, Destinations, and Buildings
+        const candidates = [
+          { kind: 'office', score: topOffice?.score || 0, item: topOffice?.item },
+          { kind: 'faculty', score: topFaculty?.score || 0, item: topFaculty?.item },
+          { kind: 'department', score: topDept?.score || 0, item: topDept?.item },
+          { kind: 'programme', score: topProg?.score || 0, item: topProg?.item },
+          { kind: 'destination', score: topDest?.score || 0, item: topDest?.item },
+          { kind: 'building', score: topBldg?.score || 0, item: topBldg?.item }
+        ].sort((a, b) => b.score - a.score);
+
+        const best = candidates[0];
+        if (best && best.score >= 8 && best.item) {
+          if (best.kind === 'office') {
+            const o = best.item;
+            matchedBldg = getBuildingById(o.buildingId);
+            fallbackAnswer = `**${o.title}** is led by **${o.officerName}** and is located inside **${o.buildingName}** (${o.floor}, ${o.room}). Office hours: ${o.officeHours || 'Mon–Fri, 8:00 AM – 5:00 PM'}${o.email ? ` • Contact: ${o.email}` : ''}.`;
+            followUps = [`Walk to ${o.buildingName}`, "What other offices are in this faculty?", "Where is Central Teaching Facility?"];
+          } else if (best.kind === 'faculty') {
+            const f = best.item;
+            matchedBldg = getBuildingById(f.buildingId);
+            fallbackAnswer = `The **${f.name} (${f.facultyId})** is headed by **${f.deanName}** at **${matchedBldg ? matchedBldg.name : f.buildingId}** (${f.deanOfficeFloor}, ${f.deanOfficeRoom}). Contact: ${f.contactEmail}.`;
+            followUps = [`Walk to ${matchedBldg ? matchedBldg.name : f.shortName}`, `Who is the Dean of ${f.shortName}?`, "Where is Central Library?"];
+          } else if (best.kind === 'department') {
+            const d = best.item;
+            matchedBldg = getBuildingById(d.buildingId);
+            fallbackAnswer = `The **Department of ${d.name}** is headed by **${d.hodName}** and is located at **${matchedBldg ? matchedBldg.name : d.buildingId}** (HOD Office: ${d.hodOfficeFloor}, ${d.hodOfficeRoom}; Staff Room: ${d.staffOfficeRoom}).`;
+            followUps = [`Walk to ${matchedBldg ? matchedBldg.name : d.name}`, `Who is HOD of ${d.name}?`, "Where is CTF?"];
+          } else if (best.kind === 'programme') {
+            const p = best.item;
+            const dept = departments.find(d => d.departmentId === p.departmentId);
+            matchedBldg = dept ? getBuildingById(dept.buildingId) : null;
+            fallbackAnswer = `**${p.name}** (${p.duration || 'Degree/Diploma'}, ${p.awardLevel || 'Academic Programme'}) is hosted under the **Department of ${dept ? dept.name : p.departmentId}** at **${matchedBldg ? matchedBldg.name : 'its faculty complex'}**${dept ? ` (HOD: ${dept.hodName}, ${dept.hodOfficeRoom})` : ''}.`;
+            followUps = [`Walk to ${matchedBldg ? matchedBldg.name : 'department'}`, "How do I apply for this course?", "Where is Central Library?"];
+          } else if (best.kind === 'destination') {
+            const dest = best.item;
+            matchedBldg = getBuildingById(dest.buildingId);
+            const od = dest.officeDetails;
+            fallbackAnswer = `**${dest.name}** is located at **${matchedBldg ? matchedBldg.name : dest.name}**${od ? ` (${od.floor}, ${od.room}, Head: ${od.head})` : ''}. Tap **Walk Here** below to see both the shortest shortcut and official road routes.`;
+            followUps = [`Walk to ${dest.name}`, "Where is the nearest dining hall?", "Where is Medical Centre?"];
+          } else if (best.kind === 'building') {
+            matchedBldg = best.item;
+            fallbackAnswer = `**${matchedBldg.name}** (${matchedBldg.type}) is on Kyambogo campus. ${matchedBldg.description} Tap **Walk Here** below to compare the shortest pedestrian shortcut (red) and official road route (green).`;
+            followUps = [`Walk to ${matchedBldg.name}`, `What offices are in ${matchedBldg.name}?`, "What events are happening on campus?"];
+          }
+        } else {
+          // Honest, unique query-specific guidance when no building/entity matched — NEVER default blindly to Central Library!
+          matchedBldg = null;
+          actionType = "info";
+          fallbackAnswer = `I couldn't find an exact campus match for **"${question.trim()}"**. Try naming a specific Kyambogo faculty, hall of residence (e.g., Pearl Hall, North Hall, Nanziri Hall, Mandela Hall), dining hall (East End Dining, West End Dining, Student Center), office (Dean, HOD, Registrar, Medical Centre), or ask about upcoming campus events.`;
+          followUps = ["Where is Pearl Hall?", "Where can I eat on campus?", "What events are coming up?"];
+        }
+      }
     }
 
     const fallbackLog = {
@@ -3385,7 +3711,7 @@ Output JSON format:
       answer: fallbackAnswer,
       suggestedBuildingId: matchedBldg ? matchedBldg.buildingId : null,
       suggestedBuildingName: matchedBldg ? matchedBldg.name : null,
-      actionType: matchedBldg ? "navigate" : "info",
+      actionType,
       timestamp: new Date().toISOString(),
       userAgent: req.headers["user-agent"] || "unknown",
       quotaProtected: true
@@ -3410,7 +3736,7 @@ Output JSON format:
           latitude: matchedBldg.latitude,
           longitude: matchedBldg.longitude
         } : null,
-        actionType: matchedBldg ? "navigate" : "info",
+        actionType,
         followUpSuggestions: followUps
       }
     });
